@@ -35,6 +35,11 @@ from typing import Annotated, Any, Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+# The parser node is implemented as a standalone deterministic package
+# (see ``parser/``). It is imported here and registered directly in
+# ``build_graph`` — this module no longer defines a parser stub.
+from parser import parser_node
+
 # ---------------------------------------------------------------------------
 # Payload type aliases
 # ---------------------------------------------------------------------------
@@ -168,21 +173,6 @@ def coordinator_node(state: LogSherlockState) -> LogSherlockState:
         * Emit an ``investigation_notes`` entry for any recoverable input issue.
     """
     return {"completed_stages": ["coordinator"]}
-
-
-def parser_node(state: LogSherlockState) -> LogSherlockState:
-    """Deterministic parser that turns ``raw_logs`` into structured entries.
-
-    TODO:
-        * Detect the log format (JSON lines, logfmt, plain text, ...).
-        * Split raw text into individual log records.
-        * Extract timestamp, level, logger, message and metadata per entry.
-        * Populate ``parsed_logs`` with normalized ``ParsedLogEntry`` records.
-        * Append investigation_notes for unparseable / dropped lines.
-
-    NOTE: no regex/parsing is implemented here — architecture only.
-    """
-    return {"parsed_logs": [], "completed_stages": ["parser"]}
 
 
 def error_analysis_node(state: LogSherlockState) -> LogSherlockState:
