@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -26,50 +27,74 @@ def test_parses_full_record(parser: JSONLinesParser) -> None:
     )
     entry = parser.parse_line(1, raw)
     assert entry is not None
-    assert entry.line_number == 1
-    assert entry.timestamp == "2024-01-01T12:00:00Z"
-    assert entry.level == "ERROR"  # normalized to upper-case
-    assert entry.logger == "auth.service"
-    assert entry.message == "login failed"
-    assert entry.metadata == {"user_id": 42}
+    assert entry["line_number"] == 1
+    # Timestamp is normalized to a datetime, not left as a string.
+    assert entry["timestamp"] == datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    assert entry["level"] == "ERROR"  # normalized to upper-case
+    assert entry["logger"] == "auth.service"
+    assert entry["message"] == "login failed"
+    assert entry["metadata"] == {"user_id": 42}
+
+
+def test_output_is_a_plain_dict(parser: JSONLinesParser) -> None:
+    entry = parser.parse_line(1, json.dumps({"message": "hi"}))
+    assert isinstance(entry, dict)
+    assert set(entry) == {
+        "line_number",
+        "raw",
+        "timestamp",
+        "level",
+        "logger",
+        "message",
+        "metadata",
+    }
 
 
 def test_field_aliases_are_recognized(parser: JSONLinesParser) -> None:
-    raw = json.dumps({"ts": "t", "severity": "warn", "name": "svc", "msg": "hi"})
+    raw = json.dumps(
+        {"ts": "2024-01-01 00:00:00", "severity": "warn", "name": "svc", "msg": "hi"}
+    )
     entry = parser.parse_line(3, raw)
     assert entry is not None
-    assert entry.timestamp == "t"
-    assert entry.level == "WARN"
-    assert entry.logger == "svc"
-    assert entry.message == "hi"
-    assert entry.metadata == {}
+    assert entry["timestamp"] == datetime(2024, 1, 1, 0, 0, 0)
+    assert entry["level"] == "WARN"
+    assert entry["logger"] == "svc"
+    assert entry["message"] == "hi"
+    assert entry["metadata"] == {}
 
 
 def test_alias_matching_is_case_insensitive(parser: JSONLinesParser) -> None:
-    raw = json.dumps({"Timestamp": "t", "Level": "info", "Message": "hey"})
+    raw = json.dumps(
+        {"Timestamp": "2024-01-01 00:00:00", "Level": "info", "Message": "hey"}
+    )
     entry = parser.parse_line(1, raw)
     assert entry is not None
-    assert entry.timestamp == "t"
-    assert entry.level == "INFO"
-    assert entry.message == "hey"
+    assert entry["timestamp"] == datetime(2024, 1, 1, 0, 0, 0)
+    assert entry["level"] == "INFO"
+    assert entry["message"] == "hey"
 
 
 def test_missing_fields_become_none(parser: JSONLinesParser) -> None:
-    raw = json.dumps({"message": "only a message"})
-    entry = parser.parse_line(1, raw)
+    entry = parser.parse_line(1, json.dumps({"message": "only a message"}))
     assert entry is not None
-    assert entry.timestamp is None
-    assert entry.level is None
-    assert entry.logger is None
-    assert entry.message == "only a message"
+    assert entry["timestamp"] is None
+    assert entry["level"] is None
+    assert entry["logger"] is None
+    assert entry["message"] == "only a message"
+
+
+def test_unparseable_timestamp_becomes_none(parser: JSONLinesParser) -> None:
+    entry = parser.parse_line(1, json.dumps({"timestamp": "not-a-date", "message": "x"}))
+    assert entry is not None
+    assert entry["timestamp"] is None
 
 
 def test_no_message_field_falls_back_to_raw(parser: JSONLinesParser) -> None:
     raw = json.dumps({"level": "info", "code": 200})
     entry = parser.parse_line(1, raw)
     assert entry is not None
-    assert entry.message == raw
-    assert entry.metadata == {"code": 200}
+    assert entry["message"] == raw
+    assert entry["metadata"] == {"code": 200}
 
 
 def test_malformed_json_returns_none(parser: JSONLinesParser) -> None:
@@ -85,8 +110,7 @@ def test_json_scalar_is_not_a_record(parser: JSONLinesParser) -> None:
 
 
 def test_confidence_all_json(parser: JSONLinesParser) -> None:
-    lines = ['{"a": 1}', '{"b": 2}']
-    assert parser.confidence(lines) == 1.0
+    assert parser.confidence(['{"a": 1}', '{"b": 2}']) == 1.0
 
 
 def test_confidence_partial(parser: JSONLinesParser) -> None:

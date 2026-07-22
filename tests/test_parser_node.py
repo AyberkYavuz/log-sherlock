@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from parser.parser_node import parser_node
 
-EXPECTED_KEYS = {"parsed_logs", "investigation_notes", "completed_stages"}
+EXPECTED_KEYS = {
+    "parsed_logs",
+    "parser_metrics",
+    "investigation_notes",
+    "completed_stages",
+}
 
 
 def _notes_text(result: dict) -> str:
@@ -46,8 +52,8 @@ def test_whitespace_only_input() -> None:
 def test_json_lines_end_to_end() -> None:
     raw = "\n".join(
         [
-            json.dumps({"timestamp": "t1", "level": "info", "message": "a"}),
-            json.dumps({"timestamp": "t2", "level": "error", "message": "b"}),
+            json.dumps({"timestamp": "2024-01-01T00:00:00Z", "level": "info", "message": "a"}),
+            json.dumps({"timestamp": "2024-01-01T00:00:01Z", "level": "error", "message": "b"}),
         ]
     )
     result = parser_node({"raw_logs": raw})
@@ -55,9 +61,15 @@ def test_json_lines_end_to_end() -> None:
     assert len(logs) == 2
     assert logs[0]["level"] == "INFO"
     assert logs[1]["message"] == "b"
+    assert isinstance(logs[0]["timestamp"], datetime)
     assert "json" in _notes_text(result)
-    # Entries are plain dicts with the full normalized schema.
-    assert set(logs[0]) == {
+
+
+def test_entries_are_plain_dicts_with_full_schema() -> None:
+    result = parser_node({"raw_logs": json.dumps({"message": "x"})})
+    entry = result["parsed_logs"][0]
+    assert isinstance(entry, dict)
+    assert set(entry) == {
         "line_number",
         "raw",
         "timestamp",
@@ -110,7 +122,7 @@ def test_missing_timestamps_are_reported() -> None:
     raw = "\n".join(
         [
             json.dumps({"message": "no ts here"}),
-            json.dumps({"timestamp": "t", "message": "has ts"}),
+            json.dumps({"timestamp": "2024-01-01T00:00:00Z", "message": "has ts"}),
         ]
     )
     result = parser_node({"raw_logs": raw})
@@ -124,8 +136,7 @@ def test_all_missing_timestamps_plural_note() -> None:
 
 
 def test_missing_levels_yield_none() -> None:
-    raw = json.dumps({"message": "no level"})
-    result = parser_node({"raw_logs": raw})
+    result = parser_node({"raw_logs": json.dumps({"message": "no level"})})
     assert result["parsed_logs"][0]["level"] is None
 
 
@@ -153,3 +164,77 @@ def test_crlf_line_endings() -> None:
     raw = json.dumps({"message": "a"}) + "\r\n" + json.dumps({"message": "b"})
     result = parser_node({"raw_logs": raw})
     assert len(result["parsed_logs"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# parser_metrics
+# ---------------------------------------------------------------------------
+
+
+def test_metrics_line_counts_add_up() -> None:
+    raw = "\n".join(
+        [
+            json.dumps({"timestamp": "2024-01-01T00:00:00Z", "message": "ok"}),
+            "",  # blank
+            "{broken",  # malformed
+            json.dumps({"message": "no ts"}),
+        ]
+    )
+    metrics = parser_node({"raw_logs": raw})["parser_metrics"]
+    assert metrics["total_lines"] == 4
+    assert metrics["blank_lines"] == 1
+    assert metrics["parsed_lines"] == 2
+    assert metrics["malformed_lines"] == 1
+    assert metrics["missing_timestamp_lines"] == 1
+    # Documented invariant.
+    assert (
+        metrics["total_lines"]
+        == metrics["blank_lines"] + metrics["parsed_lines"] + metrics["malformed_lines"]
+    )
+
+
+def test_metrics_parser_name_and_format_json() -> None:
+    raw = "\n".join(json.dumps({"message": f"m{i}"}) for i in range(3))
+    metrics = parser_node({"raw_logs": raw})["parser_metrics"]
+    assert metrics["parser_name"] == "JSONLinesParser"
+    assert metrics["detected_format"] == "json"
+
+
+def test_metrics_parser_name_and_format_text() -> None:
+    metrics = parser_node({"raw_logs": "INFO plain log line"})["parser_metrics"]
+    assert metrics["parser_name"] == "PlainTextParser"
+    assert metrics["detected_format"] == "text"
+
+
+def test_metrics_confidence_json_full() -> None:
+    raw = "\n".join(json.dumps({"message": f"m{i}"}) for i in range(4))
+    metrics = parser_node({"raw_logs": raw})["parser_metrics"]
+    assert metrics["parser_confidence"] == 1.0
+
+
+def test_metrics_confidence_text_baseline() -> None:
+    metrics = parser_node({"raw_logs": "just text"})["parser_metrics"]
+    assert metrics["parser_confidence"] == 0.1
+
+
+def test_metrics_present_for_empty_input() -> None:
+    metrics = parser_node({"raw_logs": ""})["parser_metrics"]
+    assert metrics["total_lines"] == 0
+    assert metrics["parsed_lines"] == 0
+    assert metrics["malformed_lines"] == 0
+    assert metrics["blank_lines"] == 0
+
+
+def test_metrics_is_plain_dict_with_full_schema() -> None:
+    metrics = parser_node({"raw_logs": "INFO hi"})["parser_metrics"]
+    assert isinstance(metrics, dict)
+    assert set(metrics) == {
+        "parser_name",
+        "parser_confidence",
+        "detected_format",
+        "total_lines",
+        "blank_lines",
+        "parsed_lines",
+        "malformed_lines",
+        "missing_timestamp_lines",
+    }

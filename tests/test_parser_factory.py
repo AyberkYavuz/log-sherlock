@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from parser.json_parser import JSONLinesParser
-from parser.parser_factory import sample_lines, select_parser
+from parser.parser_factory import Detection, detect, sample_lines, select_parser
 from parser.text_parser import PlainTextParser
 
 
@@ -30,6 +30,25 @@ def test_majority_json_selects_json() -> None:
 
 def test_empty_input_defaults_to_text() -> None:
     assert isinstance(select_parser([]), PlainTextParser)
+
+
+def test_detect_returns_parser_and_confidence() -> None:
+    result = detect(['{"a": 1}', '{"b": 2}'])
+    assert isinstance(result, Detection)
+    assert isinstance(result.parser, JSONLinesParser)
+    assert result.confidence == 1.0
+
+
+def test_detect_confidence_for_text_fallback() -> None:
+    result = detect(["plain text only"])
+    assert isinstance(result.parser, PlainTextParser)
+    assert result.confidence == 0.1
+
+
+def test_detect_empty_input_confidence_is_zero() -> None:
+    result = detect([])
+    assert isinstance(result.parser, PlainTextParser)
+    assert result.confidence == 0.0
 
 
 def test_sample_lines_skips_blanks_and_strips() -> None:
