@@ -1,0 +1,3 @@
+{"timestamp":"2026-07-22T10:15:30Z","level":"INFO","message":"Started"}
+THIS IS NOT JSON
+{"timestamp":"2026-07-22T10:15:31Z","level":"ERROR","message":"DB timeout"}
