@@ -8,6 +8,7 @@ for choosing one. To support a new format, add its parser to
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import NamedTuple
 
 from .base_parser import BaseParser
 from .json_parser import JSONLinesParser
@@ -41,8 +42,15 @@ def sample_lines(lines: Sequence[str], limit: int = _SAMPLE_SIZE) -> list[str]:
     return sampled
 
 
-def select_parser(lines: Sequence[str]) -> BaseParser:
-    """Pick the best parser for ``lines``.
+class Detection(NamedTuple):
+    """Result of format detection: the chosen parser and its confidence."""
+
+    parser: BaseParser
+    confidence: float
+
+
+def detect(lines: Sequence[str]) -> Detection:
+    """Detect the best parser for ``lines`` and report its confidence.
 
     Deterministic: each structured parser is scored against a fixed sample and
     only replaces the fallback when it scores *strictly higher*. As a result the
@@ -56,4 +64,9 @@ def select_parser(lines: Sequence[str]) -> BaseParser:
         score = parser.confidence(sample)
         if score > best_score:
             best, best_score = parser, score
-    return best
+    return Detection(best, best_score)
+
+
+def select_parser(lines: Sequence[str]) -> BaseParser:
+    """Return just the best parser for ``lines`` (see :func:`detect`)."""
+    return detect(lines).parser

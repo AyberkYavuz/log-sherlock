@@ -6,8 +6,9 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
+from models import LogFormat, ParsedLogEntry
+
 from .base_parser import BaseParser
-from .models import LogFormat, ParsedLogEntry
 from .normalization import (
     LEVEL_KEYS,
     LOGGER_KEYS,
@@ -17,6 +18,7 @@ from .normalization import (
     normalize_level,
     normalize_text,
 )
+from .timestamps import parse_timestamp
 
 
 class JSONLinesParser(BaseParser):
@@ -84,9 +86,9 @@ class JSONLinesParser(BaseParser):
         return ParsedLogEntry(
             line_number=line_number,
             raw=raw,
-            message=message,
-            timestamp=normalize_text(ts_value),
+            timestamp=parse_timestamp(ts_value),
             level=normalize_level(level_value),
             logger=normalize_text(logger_value),
+            message=message,
             metadata=metadata,
         )

@@ -12,9 +12,11 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
+from models import LogFormat, ParsedLogEntry
+
 from .base_parser import BaseParser
-from .models import LogFormat, ParsedLogEntry
 from .normalization import normalize_level, normalize_text
+from .timestamps import parse_timestamp
 
 # --- reusable sub-patterns -------------------------------------------------
 # Kept as named fragments so the full-line patterns below stay readable and the
@@ -107,23 +109,23 @@ class PlainTextParser(BaseParser):
         return ParsedLogEntry(
             line_number=line_number,
             raw=raw,
-            message=message,
-            timestamp=normalize_text(groups.get("ts")),
+            timestamp=parse_timestamp(groups.get("ts")),
             level=normalize_level(groups.get("level")),
             logger=normalize_text(groups.get("logger")),
+            message=message,
             metadata={},
         )
 
     @staticmethod
     def _entry_best_effort(line_number: int, raw: str, text: str) -> ParsedLogEntry:
         """Salvage a leading timestamp/level; keep the remainder as message."""
-        timestamp: str | None = None
+        timestamp_str: str | None = None
         level: str | None = None
         remainder = text
 
         ts_match = _LEADING_TS.match(remainder)
         if ts_match:
-            timestamp = normalize_text(ts_match.group("ts"))
+            timestamp_str = ts_match.group("ts")
             remainder = remainder[ts_match.end():].lstrip()
 
         level_match = _LEADING_LEVEL.match(remainder)
@@ -134,9 +136,9 @@ class PlainTextParser(BaseParser):
         return ParsedLogEntry(
             line_number=line_number,
             raw=raw,
-            message=normalize_text(remainder) or raw,
-            timestamp=timestamp,
+            timestamp=parse_timestamp(timestamp_str),
             level=level,
             logger=None,
+            message=normalize_text(remainder) or raw,
             metadata={},
         )

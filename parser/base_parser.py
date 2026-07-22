@@ -15,7 +15,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from .models import LogFormat, ParsedLogEntry
+from models import LogFormat, ParsedLogEntry
 
 
 class BaseParser(ABC):

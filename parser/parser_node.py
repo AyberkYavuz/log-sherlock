@@ -5,10 +5,14 @@ source of truth every downstream node consumes. It is fully deterministic: no
 LLMs, no prompts, no network. Given the same ``raw_logs`` it always returns the
 same result.
 
+Alongside ``parsed_logs`` it emits:
+
+    * ``parser_metrics`` — structured, machine-readable run health
+      (:class:`~models.parser_metrics.ParserMetrics`) for downstream nodes,
+    * ``investigation_notes`` — the same facts phrased for humans.
+
 The public entry point is :func:`parser_node`, whose signature matches the stub
-in ``graph.py`` (full state in, partial state delta out). ``graph.py`` is frozen,
-so this module is imported/wired by the graph owner rather than editing the
-graph itself.
+in ``graph.py`` (full state in, partial state delta out).
 """
 
 from __future__ import annotations
@@ -16,9 +20,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from models import ParsedLogEntry, ParserMetrics
+
 from .base_parser import BaseParser
-from .models import LogFormat, ParsedLogEntry
-from .parser_factory import select_parser
+from .parser_factory import detect
 
 
 @dataclass
@@ -26,12 +31,13 @@ class _ParseOutcome:
     """Accumulated results of parsing every line of a log payload."""
 
     entries: list[ParsedLogEntry] = field(default_factory=list)
-    malformed_count: int = 0
-    missing_timestamp_count: int = 0
+    blank_lines: int = 0
+    malformed_lines: int = 0
+    missing_timestamp_lines: int = 0
 
 
 def _split_lines(raw_logs: str) -> list[str]:
-    """Split raw log text into lines, dropping the universal-newline endings.
+    """Split raw log text into lines, dropping the line endings.
 
     ``str.splitlines`` handles ``\\n``, ``\\r\\n`` and ``\\r`` uniformly, which
     keeps line numbering stable across platforms.
@@ -43,45 +49,79 @@ def _parse_lines(lines: list[str], parser: BaseParser) -> _ParseOutcome:
     """Parse each line with ``parser``, tolerating malformed input.
 
     Blank / whitespace-only lines are skipped silently (they are not data and
-    are not counted as malformed). ``line_number`` is the 1-based index within
-    the original text so entries stay traceable back to the source.
+    are not malformed). ``line_number`` is the 1-based index within the original
+    text so entries stay traceable back to the source.
     """
     outcome = _ParseOutcome()
     for index, raw in enumerate(lines, start=1):
         if not raw.strip():
+            outcome.blank_lines += 1
             continue
         entry = parser.parse_line(index, raw)
         if entry is None:
-            outcome.malformed_count += 1
+            outcome.malformed_lines += 1
             continue
         outcome.entries.append(entry)
-        if entry.timestamp is None:
-            outcome.missing_timestamp_count += 1
+        if entry["timestamp"] is None:
+            outcome.missing_timestamp_lines += 1
     return outcome
 
 
-def _build_notes(
-    log_format: LogFormat, entry_count: int, outcome: _ParseOutcome
-) -> list[str]:
-    """Compose the human-readable ``investigation_notes`` for this run."""
-    notes = [f"Parser: detected log format '{log_format.value}'."]
-    notes.append(f"Parser: parsed {entry_count} log entr" + ("y." if entry_count == 1 else "ies."))
-    if outcome.malformed_count:
+def _build_metrics(
+    parser: BaseParser,
+    confidence: float,
+    total_lines: int,
+    outcome: _ParseOutcome,
+) -> ParserMetrics:
+    """Assemble the structured :class:`ParserMetrics` for this run."""
+    return ParserMetrics(
+        parser_name=type(parser).__name__,
+        parser_confidence=confidence,
+        detected_format=parser.log_format.value,
+        total_lines=total_lines,
+        blank_lines=outcome.blank_lines,
+        parsed_lines=len(outcome.entries),
+        malformed_lines=outcome.malformed_lines,
+        missing_timestamp_lines=outcome.missing_timestamp_lines,
+    )
+
+
+def _build_notes(metrics: ParserMetrics) -> list[str]:
+    """Compose human-readable ``investigation_notes`` from the metrics."""
+    if metrics["parsed_lines"] == 0 and metrics["malformed_lines"] == 0:
+        return ["Parser: no log lines to parse (empty input)."]
+
+    notes = [
+        f"Parser: detected log format '{metrics['detected_format']}' "
+        f"using {metrics['parser_name']} "
+        f"(confidence {metrics['parser_confidence']:.2f}).",
+        f"Parser: parsed {metrics['parsed_lines']} "
+        + _plural(metrics["parsed_lines"], "log entry", "log entries")
+        + ".",
+    ]
+    if metrics["malformed_lines"]:
         notes.append(
-            f"Parser: skipped {outcome.malformed_count} malformed line"
-            f"{'' if outcome.malformed_count == 1 else 's'}."
+            f"Parser: skipped {metrics['malformed_lines']} malformed "
+            + _plural(metrics["malformed_lines"], "line", "lines")
+            + "."
         )
-    if outcome.missing_timestamp_count:
+    if metrics["missing_timestamp_lines"]:
+        count = metrics["missing_timestamp_lines"]
         notes.append(
-            f"Parser: {outcome.missing_timestamp_count} entr"
-            f"{'y is' if outcome.missing_timestamp_count == 1 else 'ies are'} "
-            "missing a timestamp."
+            f"Parser: {count} "
+            + _plural(count, "entry is", "entries are")
+            + " missing a timestamp."
         )
     return notes
 
 
+def _plural(count: int, singular: str, plural: str) -> str:
+    """Return ``singular`` when ``count == 1`` else ``plural``."""
+    return singular if count == 1 else plural
+
+
 def parser_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Parse ``raw_logs`` into normalized ``parsed_logs``.
+    """Parse ``raw_logs`` into normalized ``parsed_logs`` and metrics.
 
     Args:
         state: The LogSherlock graph state. Only ``raw_logs`` is read.
@@ -89,8 +129,9 @@ def parser_node(state: dict[str, Any]) -> dict[str, Any]:
     Returns:
         A partial state delta containing exactly:
 
-            * ``parsed_logs`` — list of normalized entry dicts,
-            * ``investigation_notes`` — notes about format, counts and gaps,
+            * ``parsed_logs`` — list of :class:`ParsedLogEntry` dicts,
+            * ``parser_metrics`` — structured run health for downstream nodes,
+            * ``investigation_notes`` — human-readable notes,
             * ``completed_stages`` — ``["parser"]``.
 
         No other state fields are touched. ``investigation_notes`` and
@@ -100,20 +141,15 @@ def parser_node(state: dict[str, Any]) -> dict[str, Any]:
     raw_logs = state.get("raw_logs") or ""
     lines = _split_lines(raw_logs)
 
-    if not any(line.strip() for line in lines):
-        return {
-            "parsed_logs": [],
-            "investigation_notes": ["Parser: no log lines to parse (empty input)."],
-            "completed_stages": ["parser"],
-        }
-
-    parser = select_parser(lines)
-    outcome = _parse_lines(lines, parser)
-    parsed_logs = [entry.to_dict() for entry in outcome.entries]
-    notes = _build_notes(parser.log_format, len(parsed_logs), outcome)
+    detection = detect(lines)
+    outcome = _parse_lines(lines, detection.parser)
+    metrics = _build_metrics(
+        detection.parser, detection.confidence, len(lines), outcome
+    )
 
     return {
-        "parsed_logs": parsed_logs,
-        "investigation_notes": notes,
+        "parsed_logs": outcome.entries,
+        "parser_metrics": metrics,
+        "investigation_notes": _build_notes(metrics),
         "completed_stages": ["parser"],
     }
