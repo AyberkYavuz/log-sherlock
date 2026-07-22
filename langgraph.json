@@ -1,0 +1,8 @@
+{
+  "$schema": "https://raw.githubusercontent.com/langchain-ai/langgraph/main/libs/cli/schemas/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "log_sherlock": "./graph.py:compile_graph"
+  },
+  "env": ".env"
+}
