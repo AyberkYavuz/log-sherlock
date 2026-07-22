@@ -1,0 +1,4 @@
+# Keep environment secrets local
+.env
+.env.local
+.env.*.local
