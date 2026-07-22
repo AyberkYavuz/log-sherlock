@@ -35,6 +35,11 @@ from typing import Annotated, Any, Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+# Shared graph models live in the dedicated ``models`` package — the single
+# source of truth for every structure that crosses a node boundary. Feature
+# packages (parser, statistics, ...) import from here; they never redefine.
+from models import ParsedLogEntry, ParserMetrics
+
 # The parser node is implemented as a standalone deterministic package
 # (see ``parser/``). It is imported here and registered directly in
 # ``build_graph`` — this module no longer defines a parser stub.
@@ -43,13 +48,13 @@ from parser import parser_node
 # ---------------------------------------------------------------------------
 # Payload type aliases
 # ---------------------------------------------------------------------------
-# These are deliberately loose (``dict[str, Any]``) placeholders. Once the
-# business logic lands, each of these should be promoted to a concrete
-# ``TypedDict``/``pydantic`` model describing the real payload shape. Keeping
-# them as named aliases now makes the state readable and gives us a single
-# place to tighten typing later.
+# Concrete models (``ParsedLogEntry``, ``ParserMetrics``) now live in the shared
+# ``models`` package. The aliases below remain deliberately loose
+# (``dict[str, Any]``) placeholders for payloads whose nodes are not yet
+# implemented; each should graduate into a ``models`` module (``ErrorSummary``,
+# ``PatternSummary``, ``Statistics``, ``TimelineEvent``,
+# ``HistoricalInvestigation``, ...) as that node lands.
 
-ParsedLogEntry = dict[str, Any]
 ErrorSummary = dict[str, Any]
 PatternSummary = dict[str, Any]
 Statistics = dict[str, Any]
@@ -118,7 +123,12 @@ class LogSherlockState(TypedDict, total=False):
     historical_context: list[HistoricalInvestigation]
 
     # ---- WORKING ----------------------------------------------------------
+    # Both fields below are written solely by the parser node (single writer),
+    # so they need no reducer. ``parser_metrics`` exposes structured parser
+    # health for deterministic downstream use (e.g. the statistics node reads
+    # it instead of recomputing parser health from ``raw_logs``).
     parsed_logs: list[ParsedLogEntry]
+    parser_metrics: ParserMetrics
 
     # The four fan-out nodes each own exactly one of the fields below and are
     # the *sole* writer of that field within the parallel superstep. Because
@@ -203,6 +213,9 @@ def statistics_node(state: LogSherlockState) -> LogSherlockState:
     TODO:
         * Compute counts by level, logger, error type and time bucket.
         * Compute rates, percentiles and simple distributions.
+        * Reuse ``parser_metrics`` for parser-health figures (total/blank/
+          parsed/malformed/missing-timestamp line counts) rather than
+          recomputing them from ``raw_logs``.
         * Populate ``statistics`` — no LLM involved.
     """
     return {"statistics": {}, "completed_stages": ["statistics"]}
