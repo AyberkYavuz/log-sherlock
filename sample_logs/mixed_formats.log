@@ -1,0 +1,5 @@
+2026-07-22 10:15:30 INFO Started
+
+{"timestamp":"2026-07-22T10:15:31Z","level":"ERROR","message":"DB timeout"}
+
+Jan 10 14:52:31 WARN Cache miss
