@@ -1,0 +1,30 @@
+2026-07-22 10:15:30 UTC [12345] LOG:  starting PostgreSQL 17.0 on x86_64-pc-linux-gnu, compiled by gcc 13.2.0, 64-bit
+
+2026-07-22 10:15:31 UTC [12345] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+
+2026-07-22 10:15:32 UTC [12345] LOG:  database system is ready to accept connections
+
+2026-07-22 10:16:01 UTC [12401] LOG:  connection received: host=10.0.1.25 port=54318
+
+2026-07-22 10:16:01 UTC [12401] LOG:  connection authorized: user=app_user database=orders_db
+
+2026-07-22 10:16:03 UTC [12401] LOG:  duration: 2456.213 ms  statement:
+SELECT *
+FROM orders
+WHERE customer_id = 1042
+ORDER BY created_at DESC;
+
+2026-07-22 10:16:15 UTC [12408] ERROR:  deadlock detected
+
+2026-07-22 10:16:15 UTC [12408] DETAIL:  Process 12408 waits for ShareLock on transaction 8912; blocked by process 12417.
+
+2026-07-22 10:16:15 UTC [12408] HINT:  See server log for query details.
+
+2026-07-22 10:16:16 UTC [12408] STATEMENT:
+UPDATE orders
+SET status='SHIPPED'
+WHERE id=1024;
+
+2026-07-22 10:16:20 UTC [12401] LOG:  disconnection: session time: 0:00:19.214 user=app_user database=orders_db host=10.0.1.25 port=54318
+
+2026-07-22 10:17:00 UTC [12345] LOG:  checkpoint complete: wrote 512 buffers (3.8%); write=18.120 s; sync=0.832 s; total=18.987 s
