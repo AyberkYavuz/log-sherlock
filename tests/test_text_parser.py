@@ -100,3 +100,103 @@ def test_confidence_is_low_baseline(parser: PlainTextParser) -> None:
 
 def test_confidence_zero_for_empty(parser: PlainTextParser) -> None:
     assert parser.confidence([]) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Spring Boot pattern
+# ---------------------------------------------------------------------------
+
+
+def test_spring_boot_full_extraction(parser: PlainTextParser) -> None:
+    line = (
+        "2026-07-22 10:15:33.210 ERROR 12345 --- [nio-8080-exec-2] "
+        "c.logsherlock.repository.OrderRepository : "
+        "Database timeout while fetching order id=1024"
+    )
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["timestamp"] == datetime(2026, 7, 22, 10, 15, 33, 210000)
+    assert entry["level"] == "ERROR"
+    assert entry["logger"] == "c.logsherlock.repository.OrderRepository"
+    assert entry["message"] == "Database timeout while fetching order id=1024"
+    assert entry["metadata"] == {"thread": "nio-8080-exec-2", "pid": 12345}
+
+
+def test_spring_boot_padded_thread_is_trimmed(parser: PlainTextParser) -> None:
+    # Spring aligns the thread column with padding; the value is just the name.
+    line = (
+        "2026-07-22 10:15:30.123  INFO 12345 --- [           main] "
+        "c.logsherlock.Application          : Starting LogSherlockApplication"
+    )
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["level"] == "INFO"
+    assert entry["logger"] == "c.logsherlock.Application"
+    assert entry["message"] == "Starting LogSherlockApplication"
+    assert entry["metadata"] == {"thread": "main", "pid": 12345}
+
+
+def test_spring_boot_pid_is_int(parser: PlainTextParser) -> None:
+    line = (
+        "2026-07-22 10:15:32.002  WARN 12345 --- [nio-8080-exec-1] "
+        "c.logsherlock.service.OrderService : Slow query"
+    )
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["metadata"]["pid"] == 12345
+    assert isinstance(entry["metadata"]["pid"], int)
+
+
+# ---------------------------------------------------------------------------
+# PostgreSQL pattern
+# ---------------------------------------------------------------------------
+
+
+def test_postgres_error_extraction(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, "2026-07-22 10:16:15 UTC [12408] ERROR:  deadlock detected")
+    assert entry is not None
+    assert entry["timestamp"] == datetime(2026, 7, 22, 10, 16, 15)
+    assert entry["level"] == "ERROR"
+    assert entry["logger"] is None
+    assert entry["message"] == "deadlock detected"
+    assert entry["metadata"] == {"pid": 12408, "timezone": "UTC"}
+
+
+@pytest.mark.parametrize(
+    "severity",
+    ["LOG", "DETAIL", "HINT", "STATEMENT", "WARNING", "FATAL", "PANIC"],
+)
+def test_postgres_severity_levels_recognised(
+    parser: PlainTextParser, severity: str
+) -> None:
+    entry = parser.parse_line(1, f"2026-07-22 10:16:15 UTC [12408] {severity}:  something happened")
+    assert entry is not None
+    assert entry["level"] == severity
+    assert entry["message"] == "something happened"
+    assert entry["metadata"] == {"pid": 12408, "timezone": "UTC"}
+
+
+# ---------------------------------------------------------------------------
+# Python logging (must not regress)
+# ---------------------------------------------------------------------------
+
+
+def test_python_logging_logger_and_message(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, "INFO:root:Processing order 42")
+    assert entry is not None
+    assert entry["level"] == "INFO"
+    assert entry["logger"] == "root"
+    assert entry["message"] == "Processing order 42"
+    assert entry["metadata"] == {}
+
+
+# ---------------------------------------------------------------------------
+# Generic patterns keep empty metadata (no invented values)
+# ---------------------------------------------------------------------------
+
+
+def test_generic_pattern_has_empty_metadata(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, "2024-01-01 12:00:00 INFO auth.service: user logged in")
+    assert entry is not None
+    assert entry["logger"] == "auth.service"
+    assert entry["metadata"] == {}
