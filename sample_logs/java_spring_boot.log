@@ -1,0 +1,13 @@
+2026-07-22 10:15:30.123  INFO 12345 --- [           main] c.logsherlock.Application          : Starting LogSherlockApplication using Java 21 on DEV-PC with PID 12345
+
+2026-07-22 10:15:31.451  INFO 12345 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer : Tomcat started on port 8080 (http)
+
+2026-07-22 10:15:32.002  WARN 12345 --- [nio-8080-exec-1] c.logsherlock.service.OrderService      : Slow database query detected (2450 ms)
+
+2026-07-22 10:15:33.210 ERROR 12345 --- [nio-8080-exec-2] c.logsherlock.repository.OrderRepository : Database timeout while fetching order id=1024
+
+java.sql.SQLTimeoutException: Query timed out after 30 seconds
+    at com.mysql.jdbc.StatementImpl.executeQuery(StatementImpl.java:123)
+    at com.logsherlock.repository.OrderRepository.find(OrderRepository.java:87)
+
+2026-07-22 10:15:35.412  INFO 12345 --- [           main] c.logsherlock.Application          : Shutdown complete
