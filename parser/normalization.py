@@ -48,6 +48,19 @@ MESSAGE_KEYS: tuple[str, ...] = (
     "body",
 )
 
+# Numeric severity scale used by the Bunyan/Pino family of JSON loggers, which
+# emit ``level`` as an integer rather than a name. These values (10..60) never
+# collide with syslog's 0..7 scale, so mapping them to names is unambiguous;
+# any other numeric level is preserved verbatim by :func:`normalize_level`.
+NUMERIC_LEVEL_NAMES: dict[int, str] = {
+    10: "TRACE",
+    20: "DEBUG",
+    30: "INFO",
+    40: "WARN",
+    50: "ERROR",
+    60: "FATAL",
+}
+
 
 def normalize_level(value: Any) -> str | None:
     """Normalize a raw level value to a trimmed, upper-cased string.
@@ -60,6 +73,40 @@ def normalize_level(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text.upper() or None
+
+
+def normalize_json_level(value: Any) -> str | None:
+    """Normalize a JSON log level, mapping numeric Bunyan/Pino levels to names.
+
+    Behaves like :func:`normalize_level` for named levels, but recognises the
+    integer severity scale used by JSON loggers such as Pino/Bunyan
+    (``30`` → ``"INFO"``, ``50`` → ``"ERROR"``; see :data:`NUMERIC_LEVEL_NAMES`).
+    An integer outside that scale is preserved verbatim (as a string) rather
+    than guessed at — the parser never invents a level it cannot map.
+    """
+    number = _as_int(value)
+    if number is not None and number in NUMERIC_LEVEL_NAMES:
+        return NUMERIC_LEVEL_NAMES[number]
+    return normalize_level(value)
+
+
+def _as_int(value: Any) -> int | None:
+    """Return ``value`` as an ``int`` if it *is* an integer, else ``None``.
+
+    ``bool`` is rejected (it is an ``int`` subclass but not a log level), and a
+    non-integral float or a non-numeric string yields ``None``.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lstrip("+-").isdigit():
+            return int(text)
+    return None
 
 
 def normalize_text(value: Any) -> str | None:

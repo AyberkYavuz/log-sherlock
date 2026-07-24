@@ -16,6 +16,9 @@ Supported formats (standard library only):
         * ``Jan 10 14:52:31``
         * ``Jan  1 14:52:31``                 (space-padded day)
 
+    US locale-style (12-hour clock, e.g. NestJS' default logger):
+        * ``07/22/2026, 10:15:30 AM``
+
 Notes:
     * Syslog timestamps carry no year, so they parse to the standard-library
       default year (1900). This is a documented limitation of the format, not
@@ -34,6 +37,7 @@ from typing import Any
 # separately by ``fromisoformat`` (it covers all the ISO variants above).
 _STRPTIME_FORMATS: tuple[str, ...] = (
     "%b %d %H:%M:%S",  # syslog: "Jan 10 14:52:31"
+    "%m/%d/%Y, %I:%M:%S %p",  # NestJS logger: "07/22/2026, 10:15:30 AM"
 )
 
 

@@ -15,7 +15,7 @@ from .normalization import (
     MESSAGE_KEYS,
     TIMESTAMP_KEYS,
     first_present,
-    normalize_level,
+    normalize_json_level,
     normalize_text,
 )
 from .timestamps import parse_timestamp
@@ -26,7 +26,9 @@ class JSONLinesParser(BaseParser):
 
     Known fields (timestamp, level, logger, message) are pulled out via the
     alias tables in :mod:`parser.normalization`; every remaining key is kept
-    verbatim in ``metadata`` so no information is lost.
+    verbatim in ``metadata`` so no information is lost. Numeric levels from the
+    Pino/Bunyan family (``30`` → ``INFO``) are mapped to names via
+    :func:`~parser.normalization.normalize_json_level`.
     """
 
     log_format = LogFormat.JSON
@@ -87,7 +89,7 @@ class JSONLinesParser(BaseParser):
             line_number=line_number,
             raw=raw,
             timestamp=parse_timestamp(ts_value),
-            level=normalize_level(level_value),
+            level=normalize_json_level(level_value),
             logger=normalize_text(logger_value),
             message=message,
             metadata=metadata,
