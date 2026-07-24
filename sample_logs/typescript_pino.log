@@ -1,0 +1,3 @@
+{"level":30,"time":"2026-07-22T10:15:30.100Z","pid":4123,"hostname":"api-prod-01","reqId":"req-101","msg":"Incoming request","method":"GET","url":"/orders"}
+
+{"level":50,"time":"2026-07-22T10:15:31.900Z","pid":4123,"hostname":"api-prod-01","reqId":"req-101","err":{"type":"Error","message":"Database timeout"},"msg":"Request failed"}

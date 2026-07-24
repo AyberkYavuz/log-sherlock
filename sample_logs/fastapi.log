@@ -1,0 +1,20 @@
+INFO:     Started server process [24581]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+
+INFO:     127.0.0.1:53122 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53124 - "POST /predict HTTP/1.1" 500 Internal Server Error
+
+ERROR:    Exception in ASGI application
+
+Traceback (most recent call last):
+  File "/app/main.py", line 58, in predict
+    result = model.predict(payload)
+  File "/app/model.py", line 42, in predict
+    raise RuntimeError("Model not loaded")
+RuntimeError: Model not loaded
+
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.

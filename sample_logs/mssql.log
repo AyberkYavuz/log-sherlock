@@ -1,0 +1,13 @@
+2026-07-22 10:15:30.14 Server      Microsoft SQL Server 2025 starting.
+
+2026-07-22 10:15:31.55 Server      Listening on TCP port 1433.
+
+2026-07-22 10:16:04.17 spid57      Login succeeded for user 'sa'.
+
+2026-07-22 10:16:08.73 spid61 Error: 1205, Severity: 13, State: 51.
+
+2026-07-22 10:16:08.73 spid61 Transaction (Process ID 61) was deadlocked on lock resources.
+
+2026-07-22 10:16:08.73 spid61 The statement has been terminated.
+
+2026-07-22 10:16:20.82 spid57 DBCC CHECKDB completed.

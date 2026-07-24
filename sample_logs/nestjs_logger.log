@@ -1,0 +1,8 @@
+[Nest] 19452  - 07/22/2026, 10:15:30 AM     LOG [NestFactory] Starting Nest application...
+
+[Nest] 19452  - 07/22/2026, 10:15:31 AM     LOG [InstanceLoader] AppModule dependencies initialized
+
+[Nest] 19452  - 07/22/2026, 10:15:33 AM   ERROR [OrdersService] Database timeout
+
+Error: Timeout exceeded
+    at OrdersRepository.findAll (...)
