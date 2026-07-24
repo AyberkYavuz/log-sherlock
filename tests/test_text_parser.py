@@ -191,6 +191,105 @@ def test_python_logging_logger_and_message(parser: PlainTextParser) -> None:
 
 
 # ---------------------------------------------------------------------------
+# FastAPI / Uvicorn pattern
+# ---------------------------------------------------------------------------
+
+
+def test_uvicorn_access_line(parser: PlainTextParser) -> None:
+    line = 'INFO:     127.0.0.1:53122 - "GET /health HTTP/1.1" 200 OK'
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["level"] == "INFO"
+    assert entry["logger"] == "uvicorn.access"
+    assert entry["message"] == "GET /health HTTP/1.1 -> 200 OK"
+    assert entry["metadata"] == {
+        "client_ip": "127.0.0.1",
+        "client_port": 53122,
+        "method": "GET",
+        "path": "/health",
+        "status_code": 200,
+    }
+
+
+def test_uvicorn_access_multiword_reason(parser: PlainTextParser) -> None:
+    line = 'INFO:     127.0.0.1:53124 - "POST /predict HTTP/1.1" 500 Internal Server Error'
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["message"] == "POST /predict HTTP/1.1 -> 500 Internal Server Error"
+    assert entry["metadata"]["status_code"] == 500
+
+
+def test_uvicorn_level_prefixed_line(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, "INFO:     Application startup complete.")
+    assert entry is not None
+    assert entry["level"] == "INFO"
+    assert entry["logger"] is None
+    assert entry["message"] == "Application startup complete."
+    assert entry["metadata"] == {}
+
+
+# ---------------------------------------------------------------------------
+# NestJS pattern
+# ---------------------------------------------------------------------------
+
+
+def test_nestjs_error_line(parser: PlainTextParser) -> None:
+    line = "[Nest] 19452  - 07/22/2026, 10:15:33 AM   ERROR [OrdersService] Database timeout"
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["timestamp"] == datetime(2026, 7, 22, 10, 15, 33)
+    assert entry["level"] == "ERROR"
+    assert entry["logger"] == "OrdersService"
+    assert entry["message"] == "Database timeout"
+    assert entry["metadata"] == {"pid": 19452}
+
+
+def test_nestjs_log_level(parser: PlainTextParser) -> None:
+    line = "[Nest] 19452  - 07/22/2026, 10:15:30 AM     LOG [NestFactory] Starting Nest application..."
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["level"] == "LOG"
+    assert entry["logger"] == "NestFactory"
+    assert entry["message"] == "Starting Nest application..."
+
+
+# ---------------------------------------------------------------------------
+# SQL Server ERRORLOG pattern
+# ---------------------------------------------------------------------------
+
+
+def test_mssql_error_header(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, "2026-07-22 10:16:08.73 spid61 Error: 1205, Severity: 13, State: 51.")
+    assert entry is not None
+    assert entry["timestamp"] == datetime(2026, 7, 22, 10, 16, 8, 730_000)
+    assert entry["level"] == "ERROR"
+    assert entry["message"] == "Error: 1205, Severity: 13, State: 51."
+    assert entry["metadata"] == {
+        "spid": 61,
+        "error_number": 1205,
+        "severity": 13,
+        "state": 51,
+    }
+
+
+def test_mssql_spid_line_without_error(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, "2026-07-22 10:16:04.17 spid57      Login succeeded for user 'sa'.")
+    assert entry is not None
+    assert entry["level"] is None
+    assert entry["message"] == "Login succeeded for user 'sa'."
+    assert entry["metadata"] == {"spid": 57}
+
+
+def test_mssql_server_line(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, "2026-07-22 10:15:30.14 Server      Microsoft SQL Server 2025 starting.")
+    assert entry is not None
+    assert entry["level"] is None
+    assert entry["logger"] is None
+    assert entry["message"] == "Microsoft SQL Server 2025 starting."
+    assert entry["metadata"] == {}
+
+
+# ---------------------------------------------------------------------------
 # Generic patterns keep empty metadata (no invented values)
 # ---------------------------------------------------------------------------
 

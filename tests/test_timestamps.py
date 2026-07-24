@@ -43,6 +43,27 @@ def test_syslog_space_padded_day() -> None:
     assert parse_timestamp("Jan  1 14:52:31") == datetime(1900, 1, 1, 14, 52, 31)
 
 
+def test_nestjs_us_locale_am() -> None:
+    # NestJS' default logger: "MM/DD/YYYY, HH:MM:SS AM" (12-hour clock).
+    assert parse_timestamp("07/22/2026, 10:15:30 AM") == datetime(
+        2026, 7, 22, 10, 15, 30
+    )
+
+
+def test_nestjs_us_locale_pm_hour_offset() -> None:
+    # 12-hour PM times are shifted into 24-hour form.
+    assert parse_timestamp("07/22/2026, 01:05:09 PM") == datetime(
+        2026, 7, 22, 13, 5, 9
+    )
+
+
+def test_mssql_two_digit_fractional_seconds() -> None:
+    # SQL Server ERRORLOG stamps use centiseconds; ISO parsing handles them.
+    assert parse_timestamp("2026-07-22 10:15:30.14") == datetime(
+        2026, 7, 22, 10, 15, 30, 140_000
+    )
+
+
 def test_datetime_passthrough() -> None:
     dt = datetime(2024, 5, 5, 5, 5, 5)
     assert parse_timestamp(dt) is dt

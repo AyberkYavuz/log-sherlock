@@ -109,6 +109,63 @@ def test_json_scalar_is_not_a_record(parser: JSONLinesParser) -> None:
     assert parser.parse_line(1, "42") is None
 
 
+# ---------------------------------------------------------------------------
+# Pino / Bunyan numeric levels
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("numeric", "name"),
+    [(10, "TRACE"), (20, "DEBUG"), (30, "INFO"), (40, "WARN"), (50, "ERROR"), (60, "FATAL")],
+)
+def test_pino_numeric_levels_mapped(
+    parser: JSONLinesParser, numeric: int, name: str
+) -> None:
+    entry = parser.parse_line(1, json.dumps({"level": numeric, "msg": "hi"}))
+    assert entry is not None
+    assert entry["level"] == name
+
+
+def test_unknown_numeric_level_preserved_verbatim(parser: JSONLinesParser) -> None:
+    # A numeric level outside the Pino scale is not guessed at — kept as-is.
+    entry = parser.parse_line(1, json.dumps({"level": 7, "msg": "hi"}))
+    assert entry is not None
+    assert entry["level"] == "7"
+
+
+def test_named_level_still_normalizes(parser: JSONLinesParser) -> None:
+    entry = parser.parse_line(1, json.dumps({"level": "warn", "msg": "hi"}))
+    assert entry is not None
+    assert entry["level"] == "WARN"
+
+
+def test_pino_msg_and_metadata(parser: JSONLinesParser) -> None:
+    raw = json.dumps(
+        {
+            "level": 30,
+            "time": "2026-07-22T10:15:30.100Z",
+            "pid": 4123,
+            "hostname": "api-prod-01",
+            "reqId": "req-101",
+            "msg": "Incoming request",
+            "method": "GET",
+            "url": "/orders",
+        }
+    )
+    entry = parser.parse_line(1, raw)
+    assert entry is not None
+    assert entry["level"] == "INFO"
+    assert entry["message"] == "Incoming request"
+    assert entry["logger"] is None
+    assert entry["metadata"] == {
+        "pid": 4123,
+        "hostname": "api-prod-01",
+        "reqId": "req-101",
+        "method": "GET",
+        "url": "/orders",
+    }
+
+
 def test_confidence_all_json(parser: JSONLinesParser) -> None:
     assert parser.confidence(['{"a": 1}', '{"b": 2}']) == 1.0
 
