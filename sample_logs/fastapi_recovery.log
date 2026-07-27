@@ -1,0 +1,269 @@
+2026-07-27 14:19:25 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-07-27 14:19:25 INFO:     Started reloader process [3565] using WatchFiles
+2026-07-27 14:19:25 INFO:     Started server process [3567]
+2026-07-27 14:19:25 INFO:     Waiting for application startup.
+2026-07-27 14:19:25 INFO:     Loading AI models...
+2026-07-27 14:19:25 INFO:     Loaded model sentiment-v1
+2026-07-27 14:19:25 INFO:     Loaded model embeddings-v2
+2026-07-27 14:19:25 INFO:     Initializing inference engine...
+2026-07-27 14:19:25 INFO:     Inference service ready
+2026-07-27 14:19:25 INFO:     Application startup complete.
+2026-07-27 14:19:52 INFO:     Health check requested
+2026-07-27 14:19:52 INFO:     127.0.0.1:50502 - "GET /health HTTP/1.1" 200
+2026-07-27 14:19:53 INFO:     Fetching available models
+2026-07-27 14:19:53 INFO:     Returning 2 available models
+2026-07-27 14:19:53 INFO:     127.0.0.1:50502 - "GET /models HTTP/1.1" 200
+2026-07-27 14:19:53 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:53 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:53 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:53 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:19:53 INFO:     Prediction request completed
+2026-07-27 14:19:53 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:54 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:54 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:54 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:54 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:19:54 INFO:     Prediction request completed
+2026-07-27 14:19:54 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:54 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:54 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:54 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:54 INFO:     Inference completed model=sentiment-v1 latency_ms=124
+2026-07-27 14:19:54 INFO:     Prediction request completed
+2026-07-27 14:19:54 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:54 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:54 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:54 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:55 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:19:55 INFO:     Prediction request completed
+2026-07-27 14:19:55 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:55 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:55 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:55 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:55 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:19:55 INFO:     Prediction request completed
+2026-07-27 14:19:55 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:55 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:55 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:55 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:55 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:19:55 INFO:     Prediction request completed
+2026-07-27 14:19:55 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:56 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:56 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:56 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:56 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:19:56 INFO:     Prediction request completed
+2026-07-27 14:19:56 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:56 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:56 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:56 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:56 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:19:56 INFO:     Prediction request completed
+2026-07-27 14:19:56 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:56 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:56 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:56 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:56 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:19:56 INFO:     Prediction request completed
+2026-07-27 14:19:56 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:57 INFO:     Prediction request received model=sentiment-v1 text_length=18
+2026-07-27 14:19:57 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:57 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:57 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:19:57 INFO:     Prediction request completed
+2026-07-27 14:19:57 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:19:57 WARNING:  Scenario changed from normal to model_not_loaded
+2026-07-27 14:19:57 INFO:     127.0.0.1:50502 - "POST /scenario HTTP/1.1" 200
+2026-07-27 14:19:58 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:19:58 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:58 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:58 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:19:58 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:19:58 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:19:58 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:58 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:58 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:19:58 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:19:59 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:19:59 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:59 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:59 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:19:59 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:19:59 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:19:59 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:59 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:59 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:19:59 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:19:59 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:19:59 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:19:59 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:19:59 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:19:59 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:20:00 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:20:00 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:00 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:00 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:20:00 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:20:00 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:20:00 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:00 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:00 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:20:00 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:20:00 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:20:00 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:00 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:00 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:20:00 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:20:00 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:20:00 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:00 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:00 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:20:00 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:20:00 INFO:     Prediction request received model=sentiment-v1 text_length=19
+2026-07-27 14:20:00 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:00 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:00 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:20:00 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:20:01 INFO:     Health check requested
+2026-07-27 14:20:01 INFO:     127.0.0.1:50502 - "GET /health HTTP/1.1" 200
+2026-07-27 14:20:01 WARNING:  Scenario changed from model_not_loaded to normal
+2026-07-27 14:20:01 INFO:     127.0.0.1:50502 - "POST /scenario HTTP/1.1" 200
+2026-07-27 14:20:02 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:02 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:02 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:02 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:20:02 INFO:     Prediction request completed
+2026-07-27 14:20:02 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:03 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:03 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:03 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:03 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:20:03 INFO:     Prediction request completed
+2026-07-27 14:20:03 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:03 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:03 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:03 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:03 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:20:03 INFO:     Prediction request completed
+2026-07-27 14:20:03 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:03 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:03 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:03 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:04 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:20:04 INFO:     Prediction request completed
+2026-07-27 14:20:04 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:04 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:04 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:04 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:04 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:20:04 INFO:     Prediction request completed
+2026-07-27 14:20:04 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:04 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:04 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:04 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:04 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:20:04 INFO:     Prediction request completed
+2026-07-27 14:20:04 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:04 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:04 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:04 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:05 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:20:05 INFO:     Prediction request completed
+2026-07-27 14:20:05 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:05 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:05 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:05 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:05 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:20:05 INFO:     Prediction request completed
+2026-07-27 14:20:05 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:05 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:05 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:05 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:05 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:20:05 INFO:     Prediction request completed
+2026-07-27 14:20:05 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:06 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:20:06 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:20:06 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:20:06 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:20:06 INFO:     Prediction request completed
+2026-07-27 14:20:06 INFO:     127.0.0.1:50502 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:20:06 WARNING:  Reloading model 'sentiment-v1'
+2026-07-27 14:20:06 INFO:     Model 'sentiment-v1' reloaded successfully
+2026-07-27 14:20:06 INFO:     127.0.0.1:50502 - "POST /reload-model HTTP/1.1" 200
+2026-07-27 14:20:07 INFO:     Fetching available models
+2026-07-27 14:20:07 INFO:     Returning 2 available models
+2026-07-27 14:20:07 INFO:     127.0.0.1:50502 - "GET /models HTTP/1.1" 200
+2026-07-27 14:20:07 INFO:     Health check requested
+2026-07-27 14:20:07 INFO:     127.0.0.1:50502 - "GET /health HTTP/1.1" 200
