@@ -1,0 +1,417 @@
+2026-07-27 14:02:37 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-07-27 14:02:37 INFO:     Started reloader process [3107] using WatchFiles
+2026-07-27 14:02:37 INFO:     Started server process [3109]
+2026-07-27 14:02:37 INFO:     Waiting for application startup.
+2026-07-27 14:02:37 INFO:     Loading AI models...
+2026-07-27 14:02:37 INFO:     Loaded model sentiment-v1
+2026-07-27 14:02:37 INFO:     Loaded model embeddings-v2
+2026-07-27 14:02:37 INFO:     Initializing inference engine...
+2026-07-27 14:02:37 INFO:     Inference service ready
+2026-07-27 14:02:37 INFO:     Application startup complete.
+2026-07-27 14:02:51 INFO:     Health check requested
+2026-07-27 14:02:51 INFO:     127.0.0.1:50439 - "GET /health HTTP/1.1" 200
+2026-07-27 14:02:51 INFO:     Fetching available models
+2026-07-27 14:02:51 INFO:     Returning 2 available models
+2026-07-27 14:02:51 INFO:     127.0.0.1:50439 - "GET /models HTTP/1.1" 200
+2026-07-27 14:02:52 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:52 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:52 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:52 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:52 INFO:     Prediction request completed
+2026-07-27 14:02:52 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:52 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:52 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:52 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:52 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:52 INFO:     Prediction request completed
+2026-07-27 14:02:52 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:53 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:53 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:53 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:53 INFO:     Inference completed model=sentiment-v1 latency_ms=124
+2026-07-27 14:02:53 INFO:     Prediction request completed
+2026-07-27 14:02:53 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:53 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:53 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:53 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:53 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:53 INFO:     Prediction request completed
+2026-07-27 14:02:53 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:53 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:53 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:53 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:53 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:53 INFO:     Prediction request completed
+2026-07-27 14:02:53 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:54 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:54 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:54 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:54 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:02:54 INFO:     Prediction request completed
+2026-07-27 14:02:54 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:54 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:54 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:54 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:54 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:02:54 INFO:     Prediction request completed
+2026-07-27 14:02:54 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:55 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:55 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:55 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:55 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:55 INFO:     Prediction request completed
+2026-07-27 14:02:55 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:55 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:55 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:55 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:55 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:02:55 INFO:     Prediction request completed
+2026-07-27 14:02:55 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:55 INFO:     Prediction request received model=sentiment-v1 text_length=20
+2026-07-27 14:02:55 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:55 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:56 INFO:     Inference completed model=sentiment-v1 latency_ms=124
+2026-07-27 14:02:56 INFO:     Prediction request completed
+2026-07-27 14:02:56 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:56 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:56 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:56 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:56 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:56 INFO:     Prediction request completed
+2026-07-27 14:02:56 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:56 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:56 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:56 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:56 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:56 INFO:     Prediction request completed
+2026-07-27 14:02:56 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:57 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:57 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:57 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:57 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:02:57 INFO:     Prediction request completed
+2026-07-27 14:02:57 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:57 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:57 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:57 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:57 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:02:57 INFO:     Prediction request completed
+2026-07-27 14:02:57 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:57 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:57 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:57 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:58 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:58 INFO:     Prediction request completed
+2026-07-27 14:02:58 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:58 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:58 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:58 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:58 INFO:     Inference completed model=sentiment-v1 latency_ms=123
+2026-07-27 14:02:58 INFO:     Prediction request completed
+2026-07-27 14:02:58 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:58 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:58 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:58 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:58 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:02:58 INFO:     Prediction request completed
+2026-07-27 14:02:58 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:58 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:58 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:58 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:59 INFO:     Inference completed model=sentiment-v1 latency_ms=123
+2026-07-27 14:02:59 INFO:     Prediction request completed
+2026-07-27 14:02:59 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:59 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:59 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:59 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:59 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:59 INFO:     Prediction request completed
+2026-07-27 14:02:59 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:02:59 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:02:59 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:02:59 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:02:59 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:02:59 INFO:     Prediction request completed
+2026-07-27 14:02:59 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:00 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:00 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:00 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:00 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:03:00 INFO:     Prediction request completed
+2026-07-27 14:03:00 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:00 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:00 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:00 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:00 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:00 INFO:     Prediction request completed
+2026-07-27 14:03:00 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:01 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:01 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:01 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:01 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:01 INFO:     Prediction request completed
+2026-07-27 14:03:01 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:01 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:01 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:01 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:01 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:03:01 INFO:     Prediction request completed
+2026-07-27 14:03:01 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:01 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:01 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:01 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:01 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:01 INFO:     Prediction request completed
+2026-07-27 14:03:01 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:02 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:02 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:02 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:02 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:03:02 INFO:     Prediction request completed
+2026-07-27 14:03:02 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:02 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:02 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:02 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:02 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:03:02 INFO:     Prediction request completed
+2026-07-27 14:03:02 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:03 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:03 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:03 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:03 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:03 INFO:     Prediction request completed
+2026-07-27 14:03:03 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:03 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:03 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:03 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:03 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:03:03 INFO:     Prediction request completed
+2026-07-27 14:03:03 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:03 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:03 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:03 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:03 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:03 INFO:     Prediction request completed
+2026-07-27 14:03:03 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:04 INFO:     Health check requested
+2026-07-27 14:03:04 INFO:     127.0.0.1:50439 - "GET /health HTTP/1.1" 200
+2026-07-27 14:03:04 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:04 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:04 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:04 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:04 INFO:     Prediction request completed
+2026-07-27 14:03:04 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:05 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:05 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:05 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:05 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:05 INFO:     Prediction request completed
+2026-07-27 14:03:05 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:05 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:05 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:05 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:05 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:03:05 INFO:     Prediction request completed
+2026-07-27 14:03:05 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:05 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:05 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:05 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:05 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:03:05 INFO:     Prediction request completed
+2026-07-27 14:03:05 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:06 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:06 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:06 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:06 INFO:     Inference completed model=sentiment-v1 latency_ms=124
+2026-07-27 14:03:06 INFO:     Prediction request completed
+2026-07-27 14:03:06 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:06 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:06 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:06 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:06 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:06 INFO:     Prediction request completed
+2026-07-27 14:03:06 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:07 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:07 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:07 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:07 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:07 INFO:     Prediction request completed
+2026-07-27 14:03:07 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:07 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:07 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:07 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:07 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:07 INFO:     Prediction request completed
+2026-07-27 14:03:07 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:07 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:07 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:07 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:08 INFO:     Inference completed model=sentiment-v1 latency_ms=124
+2026-07-27 14:03:08 INFO:     Prediction request completed
+2026-07-27 14:03:08 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:08 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:08 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:08 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:08 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:08 INFO:     Prediction request completed
+2026-07-27 14:03:08 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:08 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:08 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:08 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:08 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:03:08 INFO:     Prediction request completed
+2026-07-27 14:03:08 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:08 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:08 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:08 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:09 INFO:     Inference completed model=sentiment-v1 latency_ms=123
+2026-07-27 14:03:09 INFO:     Prediction request completed
+2026-07-27 14:03:09 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:09 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:09 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:09 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:09 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:09 INFO:     Prediction request completed
+2026-07-27 14:03:09 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:09 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:09 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:09 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:09 INFO:     Inference completed model=sentiment-v1 latency_ms=123
+2026-07-27 14:03:09 INFO:     Prediction request completed
+2026-07-27 14:03:09 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:10 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:10 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:10 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:10 INFO:     Inference completed model=sentiment-v1 latency_ms=124
+2026-07-27 14:03:10 INFO:     Prediction request completed
+2026-07-27 14:03:10 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:10 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:10 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:10 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:10 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:10 INFO:     Prediction request completed
+2026-07-27 14:03:10 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:10 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:10 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:10 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:11 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:03:11 INFO:     Prediction request completed
+2026-07-27 14:03:11 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:11 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:11 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:11 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:11 INFO:     Inference completed model=sentiment-v1 latency_ms=123
+2026-07-27 14:03:11 INFO:     Prediction request completed
+2026-07-27 14:03:11 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:11 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:11 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:11 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:11 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:11 INFO:     Prediction request completed
+2026-07-27 14:03:11 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:11 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:11 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:11 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:12 INFO:     Inference completed model=sentiment-v1 latency_ms=121
+2026-07-27 14:03:12 INFO:     Prediction request completed
+2026-07-27 14:03:12 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:12 WARNING:  Reloading model 'sentiment-v1'
+2026-07-27 14:03:12 INFO:     Model 'sentiment-v1' reloaded successfully
+2026-07-27 14:03:12 INFO:     127.0.0.1:50439 - "POST /reload-model HTTP/1.1" 200
+2026-07-27 14:03:13 INFO:     Fetching available models
+2026-07-27 14:03:13 INFO:     Returning 2 available models
+2026-07-27 14:03:13 INFO:     127.0.0.1:50439 - "GET /models HTTP/1.1" 200
+2026-07-27 14:03:13 INFO:     Health check requested
+2026-07-27 14:03:13 INFO:     127.0.0.1:50439 - "GET /health HTTP/1.1" 200
+2026-07-27 14:03:14 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:14 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:14 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:14 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:03:14 INFO:     Prediction request completed
+2026-07-27 14:03:14 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:14 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:14 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:14 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:14 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:03:14 INFO:     Prediction request completed
+2026-07-27 14:03:14 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:15 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:15 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:15 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:15 INFO:     Inference completed model=sentiment-v1 latency_ms=120
+2026-07-27 14:03:15 INFO:     Prediction request completed
+2026-07-27 14:03:15 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:15 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:15 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:15 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:15 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:15 INFO:     Prediction request completed
+2026-07-27 14:03:15 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:15 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:15 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:15 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:15 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:15 INFO:     Prediction request completed
+2026-07-27 14:03:15 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:16 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:16 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:16 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:16 INFO:     Inference completed model=sentiment-v1 latency_ms=123
+2026-07-27 14:03:16 INFO:     Prediction request completed
+2026-07-27 14:03:16 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:16 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:16 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:16 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:16 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:03:16 INFO:     Prediction request completed
+2026-07-27 14:03:16 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:16 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:16 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:16 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:17 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:17 INFO:     Prediction request completed
+2026-07-27 14:03:17 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:17 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:17 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:17 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:17 INFO:     Inference completed model=sentiment-v1 latency_ms=124
+2026-07-27 14:03:17 INFO:     Prediction request completed
+2026-07-27 14:03:17 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:17 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:17 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:17 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:18 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:18 INFO:     Prediction request completed
+2026-07-27 14:03:18 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:18 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:18 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:18 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:18 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:18 INFO:     Prediction request completed
+2026-07-27 14:03:18 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:18 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:18 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:18 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:18 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:03:18 INFO:     Prediction request completed
+2026-07-27 14:03:18 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:19 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:19 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:19 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:19 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:03:19 INFO:     Prediction request completed
+2026-07-27 14:03:19 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:19 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:19 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:19 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:19 INFO:     Inference completed model=sentiment-v1 latency_ms=125
+2026-07-27 14:03:19 INFO:     Prediction request completed
+2026-07-27 14:03:19 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:19 INFO:     Prediction request received model=sentiment-v1 text_length=21
+2026-07-27 14:03:19 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:03:19 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:03:19 INFO:     Inference completed model=sentiment-v1 latency_ms=122
+2026-07-27 14:03:19 INFO:     Prediction request completed
+2026-07-27 14:03:19 INFO:     127.0.0.1:50439 - "POST /predict HTTP/1.1" 200
+2026-07-27 14:03:20 INFO:     Health check requested
+2026-07-27 14:03:20 INFO:     127.0.0.1:50439 - "GET /health HTTP/1.1" 200

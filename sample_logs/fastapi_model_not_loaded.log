@@ -1,0 +1,266 @@
+2026-07-27 14:10:31 INFO:     Will watch for changes in these directories: ['/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks']
+2026-07-27 14:10:31 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-07-27 14:10:31 INFO:     Started reloader process [3302] using WatchFiles
+2026-07-27 14:10:31 INFO:     Started server process [3304]
+2026-07-27 14:10:31 INFO:     Waiting for application startup.
+2026-07-27 14:10:31 INFO:     Loading AI models...
+2026-07-27 14:10:31 INFO:     Loaded model sentiment-v1
+2026-07-27 14:10:31 INFO:     Loaded model embeddings-v2
+2026-07-27 14:10:31 INFO:     Initializing inference engine...
+2026-07-27 14:10:31 INFO:     Inference service ready
+2026-07-27 14:10:31 INFO:     Application startup complete.
+2026-07-27 14:11:18 INFO:     Health check requested
+2026-07-27 14:11:18 INFO:     127.0.0.1:50482 - "GET /health HTTP/1.1" 200
+2026-07-27 14:11:19 INFO:     Fetching available models
+2026-07-27 14:11:19 INFO:     Returning 2 available models
+2026-07-27 14:11:19 INFO:     127.0.0.1:50482 - "GET /models HTTP/1.1" 200
+2026-07-27 14:11:19 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:19 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:19 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:19 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:19 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:19 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:19 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:19 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:19 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:19 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:20 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:20 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:20 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:20 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:20 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:20 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:20 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:20 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:20 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:20 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:20 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:20 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:20 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:20 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:20 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:21 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:21 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:21 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:21 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:21 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:21 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:21 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:21 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:21 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:21 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:21 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:21 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:21 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:21 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:21 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:21 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:21 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:21 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:21 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:21 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:22 INFO:     Prediction request received model=sentiment-v1 text_length=27
+2026-07-27 14:11:22 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:22 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:22 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:22 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:22 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:22 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:22 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:22 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:22 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:22 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:22 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:22 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:22 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:22 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:22 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:22 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:22 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:22 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:22 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:23 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:23 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:23 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:23 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:23 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:23 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:23 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:23 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:23 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:23 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:23 INFO:     Health check requested
+2026-07-27 14:11:23 INFO:     127.0.0.1:50482 - "GET /health HTTP/1.1" 200
+2026-07-27 14:11:24 WARNING:  Reloading model 'sentiment-v1'
+2026-07-27 14:11:24 INFO:     Model 'sentiment-v1' reloaded successfully
+2026-07-27 14:11:24 INFO:     127.0.0.1:50482 - "POST /reload-model HTTP/1.1" 200
+2026-07-27 14:11:25 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:25 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:25 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:25 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:25 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:26 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:26 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:26 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:26 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:26 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:26 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:26 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:26 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:26 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:26 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:26 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:26 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:26 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:26 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:26 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:26 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:11:26 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:11:26 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:11:26 ERROR:    Model not loaded: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 46, in predict
+    raise RuntimeError(f"Model not loaded: {model}")
+RuntimeError: Model not loaded: sentiment-v1
+2026-07-27 14:11:26 INFO:     127.0.0.1:50482 - "POST /predict HTTP/1.1" 503
+2026-07-27 14:11:27 INFO:     Fetching available models
+2026-07-27 14:11:27 INFO:     Returning 2 available models
+2026-07-27 14:11:27 INFO:     127.0.0.1:50482 - "GET /models HTTP/1.1" 200
+2026-07-27 14:11:27 INFO:     Health check requested
+2026-07-27 14:11:27 INFO:     127.0.0.1:50482 - "GET /health HTTP/1.1" 200
