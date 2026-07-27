@@ -120,6 +120,12 @@ _TZ = r"(?P<tz>[A-Z][A-Za-z0-9/+\-]{1,5})"  # timezone abbreviation (e.g. ``UTC`
 _SPRING_LOGGER = r"(?P<logger>[\w$][\w.$\-]*)"
 
 # FastAPI / Uvicorn access-log building blocks.
+# Uvicorn's own emitter writes timestampless lines (``INFO:     ...``), but real
+# deployments (and the logsherlock-benchmarks fixtures) front every line with a
+# timestamp (``2026-07-27 14:02:51 INFO:     ...``). ``_OPT_TS`` is an optional
+# leading timestamp so a single pattern handles both shapes; the ``ts`` group is
+# simply absent (``None``) for the bare form.
+_OPT_TS = rf"(?:{_TS}\s+)?"
 _CLIENT = r"(?P<client_ip>[0-9a-fA-F:.]+):(?P<client_port>\d+)"  # ``127.0.0.1:53122``
 _HTTP_METHOD = r"(?P<method>[A-Z]+)"
 _HTTP_PATH = r"(?P<path>\S+)"
@@ -182,10 +188,10 @@ LINE_PATTERNS: tuple[LinePattern, ...] = (
     ),
     # -- Python logging default: LEVEL:logger:message ----------------------
     LinePattern(_compile(rf"^{_LVL}:{_LOGGER}:{_MSG}$")),
-    # -- FastAPI / Uvicorn access: LEVEL: ip:port - "METHOD path PROTO" code
+    # -- FastAPI / Uvicorn access: [TS] LEVEL: ip:port - "METHOD path PROTO" code
     LinePattern(
         _compile(
-            rf'^{_LVL}:\s+{_CLIENT}\s+-\s+"{_HTTP_METHOD}\s+{_HTTP_PATH}\s+'
+            rf'^{_OPT_TS}{_LVL}:\s+{_CLIENT}\s+-\s+"{_HTTP_METHOD}\s+{_HTTP_PATH}\s+'
             rf'{_HTTP_PROTOCOL}"\s+{_HTTP_STATUS}(?:\s+(?P<status_reason>.*))?$'
         ),
         logger="uvicorn.access",
@@ -219,11 +225,12 @@ LINE_PATTERNS: tuple[LinePattern, ...] = (
             MetaField("state", "state", int),
         ),
     ),
-    # -- Level-prefixed line: LEVEL:  message ------------------------------
+    # -- Level-prefixed line: [TS] LEVEL:  message -------------------------
     # FastAPI/Uvicorn startup, shutdown and exception lines land here (the
-    # padded colon after the level is the tell). Generic enough to reuse for
-    # any "LEVEL: message" emitter, so no logger is invented.
-    LinePattern(_compile(rf"^{_LVL}:\s+{_MSG}$")),
+    # padded colon after the level is the tell). The optional leading timestamp
+    # covers timestamp-fronted deployments; the bare form keeps working. Generic
+    # enough to reuse for any "LEVEL: message" emitter, so no logger is invented.
+    LinePattern(_compile(rf"^{_OPT_TS}{_LVL}:\s+{_MSG}$")),
     # -- Generic fallbacks (unchanged), most to least specific -------------
     # TS - logger - LEVEL - message
     LinePattern(_compile(rf"^{_TS}\s+-\s+{_LOGGER}\s+-\s+{_LVL}\s+-\s+{_MSG}$")),
