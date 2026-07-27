@@ -47,6 +47,11 @@ EXPECTED_FORMAT: dict[str, str] = {
     "simple.log": "text",
     "timestamps.log": "text",
     "fastapi.log": "text",
+    # Real logsherlock-benchmarks FastAPI captures: timestamp-fronted Uvicorn.
+    "fastapi_normal.log": "text",
+    "fastapi_model_not_loaded.log": "text",
+    "fastapi_inference_timeout.log": "text",
+    "fastapi_recovery.log": "text",
     "nestjs_logger.log": "text",
     "mssql.log": "text",
     "json.log": "json",
@@ -247,6 +252,76 @@ def test_fastapi_stack_trace_lines_stay_separate() -> None:
     # The traceback is not merged into the ASGI error line; each frame is its
     # own plain-text entry (mirrors how Java stack traces are handled).
     messages = [e["message"] for e in _entries("fastapi.log")]
+    assert "Traceback (most recent call last):" in messages
+    assert any(m.startswith("RuntimeError: Model not loaded") for m in messages)
+
+
+# ---------------------------------------------------------------------------
+# FastAPI / Uvicorn (logsherlock-benchmarks): timestamp-fronted Uvicorn logs.
+# Same Uvicorn layout as fastapi.log, but every line is prefixed with a
+# timestamp. Access lines must still yield the uvicorn.access logger + full
+# request metadata; app lines must still carry level + message.
+# ---------------------------------------------------------------------------
+
+
+def _timestamped_access_entries() -> list[dict]:
+    return [e for e in _entries("fastapi_normal.log") if e["logger"] == "uvicorn.access"]
+
+
+def test_benchmark_fastapi_timestamp_is_extracted() -> None:
+    # Every parsed line carries the leading timestamp (unlike bare fastapi.log).
+    entries = _entries("fastapi_normal.log")
+    assert entries
+    for entry in entries:
+        assert isinstance(entry["timestamp"], datetime)
+        assert entry["timestamp"].year == 2026
+
+
+def test_benchmark_fastapi_access_line_full_extraction() -> None:
+    entry = next(
+        e for e in _timestamped_access_entries()
+        if e["metadata"]["method"] == "GET" and e["metadata"]["path"] == "/health"
+    )
+    assert entry["timestamp"] == datetime(2026, 7, 27, 14, 2, 51)
+    assert entry["level"] == "INFO"
+    assert entry["logger"] == "uvicorn.access"
+    # No reason phrase after the status code in the benchmark access lines.
+    assert entry["message"] == "GET /health HTTP/1.1 -> 200"
+    assert entry["metadata"] == {
+        "client_ip": "127.0.0.1",
+        "client_port": 50439,
+        "method": "GET",
+        "path": "/health",
+        "status_code": 200,
+    }
+    assert isinstance(entry["metadata"]["status_code"], int)
+    assert isinstance(entry["metadata"]["client_port"], int)
+
+
+def test_benchmark_fastapi_app_line_has_level_but_no_logger() -> None:
+    entry = next(
+        e for e in _entries("fastapi_normal.log")
+        if e["message"] == "Application startup complete."
+    )
+    assert entry["level"] == "INFO"
+    assert entry["logger"] is None
+    assert entry["metadata"] == {}
+    assert isinstance(entry["timestamp"], datetime)
+
+
+def test_benchmark_fastapi_error_line_extracted() -> None:
+    entry = next(
+        e for e in _entries("fastapi_model_not_loaded.log")
+        if e["level"] == "ERROR"
+    )
+    assert entry["message"] == "Model not loaded: sentiment-v1"
+    assert entry["logger"] is None
+    assert isinstance(entry["timestamp"], datetime)
+
+
+def test_benchmark_fastapi_stack_trace_lines_stay_separate() -> None:
+    # As in fastapi.log, traceback frames are their own plain-text entries.
+    messages = [e["message"] for e in _entries("fastapi_model_not_loaded.log")]
     assert "Traceback (most recent call last):" in messages
     assert any(m.startswith("RuntimeError: Model not loaded") for m in messages)
 

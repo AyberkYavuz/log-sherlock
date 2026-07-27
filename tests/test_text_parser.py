@@ -228,6 +228,48 @@ def test_uvicorn_level_prefixed_line(parser: PlainTextParser) -> None:
     assert entry["metadata"] == {}
 
 
+def test_uvicorn_timestamped_access_line(parser: PlainTextParser) -> None:
+    # Timestamp-fronted access log (logsherlock-benchmarks shape): the leading
+    # timestamp is lifted while logger/message/metadata match the bare form.
+    line = '2026-07-27 14:02:51 INFO:     127.0.0.1:50439 - "GET /health HTTP/1.1" 200'
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["timestamp"] == datetime(2026, 7, 27, 14, 2, 51)
+    assert entry["level"] == "INFO"
+    assert entry["logger"] == "uvicorn.access"
+    # No reason phrase after the status code here — message ends at the code.
+    assert entry["message"] == "GET /health HTTP/1.1 -> 200"
+    assert entry["metadata"] == {
+        "client_ip": "127.0.0.1",
+        "client_port": 50439,
+        "method": "GET",
+        "path": "/health",
+        "status_code": 200,
+    }
+
+
+def test_uvicorn_timestamped_level_prefixed_line(parser: PlainTextParser) -> None:
+    line = "2026-07-27 14:02:52 INFO:     Prediction request completed"
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["timestamp"] == datetime(2026, 7, 27, 14, 2, 52)
+    assert entry["level"] == "INFO"
+    assert entry["logger"] is None
+    assert entry["message"] == "Prediction request completed"
+    assert entry["metadata"] == {}
+
+
+def test_uvicorn_timestamped_error_line(parser: PlainTextParser) -> None:
+    # ERROR uses wider padding after the colon; the level is still recognised.
+    line = "2026-07-27 14:11:26 ERROR:    Model not loaded: sentiment-v1"
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["timestamp"] == datetime(2026, 7, 27, 14, 11, 26)
+    assert entry["level"] == "ERROR"
+    assert entry["logger"] is None
+    assert entry["message"] == "Model not loaded: sentiment-v1"
+
+
 # ---------------------------------------------------------------------------
 # NestJS pattern
 # ---------------------------------------------------------------------------
