@@ -1,0 +1,263 @@
+2026-07-27 14:14:44 INFO:     Will watch for changes in these directories: ['/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks']
+2026-07-27 14:14:44 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-07-27 14:14:44 INFO:     Started reloader process [3418] using WatchFiles
+2026-07-27 14:14:45 INFO:     Started server process [3420]
+2026-07-27 14:14:45 INFO:     Waiting for application startup.
+2026-07-27 14:14:45 INFO:     Loading AI models...
+2026-07-27 14:14:45 INFO:     Loaded model sentiment-v1
+2026-07-27 14:14:45 INFO:     Loaded model embeddings-v2
+2026-07-27 14:14:45 INFO:     Initializing inference engine...
+2026-07-27 14:14:45 INFO:     Inference service ready
+2026-07-27 14:14:45 INFO:     Application startup complete.
+2026-07-27 14:14:59 INFO:     Health check requested
+2026-07-27 14:14:59 INFO:     127.0.0.1:50489 - "GET /health HTTP/1.1" 200
+2026-07-27 14:15:00 INFO:     Fetching available models
+2026-07-27 14:15:00 INFO:     Returning 2 available models
+2026-07-27 14:15:00 INFO:     127.0.0.1:50489 - "GET /models HTTP/1.1" 200
+2026-07-27 14:15:00 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:00 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:00 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:05 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:05 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:05 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:05 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:05 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:10 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:10 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:11 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:11 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:11 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:16 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:16 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:16 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:16 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:16 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:21 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:21 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:21 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:21 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:21 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:26 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:26 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:27 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:27 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:27 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:32 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:32 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:32 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:32 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:32 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:37 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:37 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:37 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:37 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:37 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:42 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:42 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:42 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:42 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:42 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:47 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:47 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:48 INFO:     Prediction request received model=sentiment-v1 text_length=28
+2026-07-27 14:15:48 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:48 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:53 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:53 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:53 INFO:     Health check requested
+2026-07-27 14:15:53 INFO:     127.0.0.1:50489 - "GET /health HTTP/1.1" 200
+2026-07-27 14:15:54 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:15:54 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:54 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:15:59 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:15:59 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:15:59 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:15:59 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:15:59 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:04 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:04 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:04 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:16:04 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:16:04 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:09 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:09 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:09 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:16:09 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:16:09 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:14 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:14 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:15 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:16:15 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:16:15 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:20 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:20 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:20 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:16:20 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:16:20 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:25 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:25 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:25 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:16:25 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:16:25 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:30 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:30 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:30 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:16:30 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:16:30 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:35 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:35 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:36 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:16:36 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:16:36 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:41 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:41 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:41 INFO:     Prediction request received model=sentiment-v1 text_length=29
+2026-07-27 14:16:41 INFO:     Validating model 'sentiment-v1'
+2026-07-27 14:16:41 INFO:     Starting inference using model 'sentiment-v1'
+2026-07-27 14:16:46 ERROR:    Inference timeout exceeded for model: sentiment-v1
+Traceback (most recent call last):
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/api.py", line 30, in predict
+    return inference_service.predict(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ayberkmacmini/Documents/projects/logsherlock-benchmarks/apps/fastapi/app/services.py", line 50, in predict
+    raise TimeoutError(f"Inference timeout exceeded for model: {model}")
+TimeoutError: Inference timeout exceeded for model: sentiment-v1
+2026-07-27 14:16:46 INFO:     127.0.0.1:50489 - "POST /predict HTTP/1.1" 504
+2026-07-27 14:16:46 INFO:     Fetching available models
+2026-07-27 14:16:46 INFO:     Returning 2 available models
+2026-07-27 14:16:46 INFO:     127.0.0.1:50489 - "GET /models HTTP/1.1" 200
+2026-07-27 14:16:46 INFO:     Health check requested
+2026-07-27 14:16:46 INFO:     127.0.0.1:50489 - "GET /health HTTP/1.1" 200
