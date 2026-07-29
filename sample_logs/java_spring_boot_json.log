@@ -1,0 +1,9 @@
+{"timestamp":"2026-07-22T10:15:30.123","level":"INFO","application":"logsherlock-order-service","service":"application","component":"bootstrap","event":"APPLICATION_STARTING","logger":"c.logsherlock.Application","thread":"main","pid":12345,"host":"DEV-PC","javaVersion":"21","message":"Starting LogSherlockApplication using Java 21 on DEV-PC with PID 12345"}
+
+{"timestamp":"2026-07-22T10:15:31.451","level":"INFO","application":"logsherlock-order-service","service":"web","component":"tomcat","event":"SERVER_STARTED","logger":"o.s.b.w.embedded.tomcat.TomcatWebServer","thread":"main","pid":12345,"port":8080,"protocol":"http","message":"Tomcat started on port 8080 (http)"}
+
+{"timestamp":"2026-07-22T10:15:32.002","level":"WARN","application":"logsherlock-order-service","service":"order","component":"database","event":"SLOW_DATABASE_QUERY","logger":"c.logsherlock.service.OrderService","thread":"nio-8080-exec-1","pid":12345,"durationMs":2450,"message":"Slow database query detected"}
+
+{"timestamp":"2026-07-22T10:15:33.210","level":"ERROR","application":"logsherlock-order-service","service":"order","component":"repository","event":"DATABASE_TIMEOUT","logger":"c.logsherlock.repository.OrderRepository","thread":"nio-8080-exec-2","pid":12345,"orderId":1024,"exception":{"type":"java.sql.SQLTimeoutException","message":"Query timed out after 30 seconds","stacktrace":"java.sql.SQLTimeoutException: Query timed out after 30 seconds\n    at com.mysql.jdbc.StatementImpl.executeQuery(StatementImpl.java:123)\n    at com.logsherlock.repository.OrderRepository.find(OrderRepository.java:87)"},"message":"Database timeout while fetching order"}
+
+{"timestamp":"2026-07-22T10:15:35.412","level":"INFO","application":"logsherlock-order-service","service":"application","component":"bootstrap","event":"APPLICATION_STOPPED","logger":"c.logsherlock.Application","thread":"main","pid":12345,"message":"Shutdown complete"}
