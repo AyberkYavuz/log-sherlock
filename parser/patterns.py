@@ -63,12 +63,16 @@ class LinePattern:
             the match's groups. When ``None`` the ``msg`` group is used.
         metadata: Named groups to lift into ``metadata`` (only those the match
             actually captured are recorded — nothing is invented).
+        extra_metadata: Optional builder for formats whose metadata keys are not
+            known up front (e.g. a run of ``key=value`` tokens). Its result is
+            merged on top of :attr:`metadata`.
     """
 
     regex: re.Pattern[str]
     logger: str | None = None
     message: Callable[[Groups], str | None] | None = None
     metadata: tuple[MetaField, ...] = field(default_factory=tuple)
+    extra_metadata: Callable[[Groups], Mapping[str, Any]] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +123,15 @@ _THREAD = r"\[\s*(?P<thread>[^\]]*?)\s*\]"  # ``[nio-8080-exec-2]`` / ``[   main
 _TZ = r"(?P<tz>[A-Z][A-Za-z0-9/+\-]{1,5})"  # timezone abbreviation (e.g. ``UTC``)
 _SPRING_LOGGER = r"(?P<logger>[\w$][\w.$\-]*)"
 
+# Spring Boot benchmark layout (logsherlock-benchmarks): the logger is followed
+# by a run of ``key=value`` tokens and only then the human-readable message.
+# Values carry no whitespace and may be empty (``orderId=``), so a token is
+# ``key=`` plus everything up to the next space; the run stops at the first
+# token without a ``=``, which is where the message begins.
+_KV_TOKEN = r"[A-Za-z_][\w.\-]*=\S*"
+_KV_FIELDS = rf"(?P<fields>(?:{_KV_TOKEN}(?:\s+|$))+)"
+_KV_PAIR = re.compile(r"(?P<key>[A-Za-z_][\w.\-]*)=(?P<value>\S*)")
+
 # FastAPI / Uvicorn access-log building blocks.
 # Uvicorn's own emitter writes timestampless lines (``INFO:     ...``), but real
 # deployments (and the logsherlock-benchmarks fixtures) front every line with a
@@ -162,6 +175,22 @@ def _uvicorn_access_message(groups: Groups) -> str:
     return f"{request} -> {status}"
 
 
+def _key_value_metadata(groups: Groups) -> dict[str, str]:
+    """Expand a captured run of ``key=value`` tokens into metadata.
+
+    Values are kept as strings (the keys are not known up front, so no per-field
+    ``cast`` can be declared). Empty values (``orderId=``) are skipped, matching
+    :class:`MetaField`'s "only what was actually captured" rule — they still
+    delimit the run, so the fields after them parse normally.
+    """
+    blob = groups.get("fields") or ""
+    return {
+        match["key"]: match["value"]
+        for match in _KV_PAIR.finditer(blob)
+        if match["value"]
+    }
+
+
 def _compile(pattern: str) -> re.Pattern[str]:
     """Compile one full-line pattern (case-insensitive, like all the others)."""
     return re.compile(pattern, re.IGNORECASE)
@@ -180,6 +209,15 @@ LINE_PATTERNS: tuple[LinePattern, ...] = (
             rf"{_SPRING_LOGGER}\s*:\s+{_MSG}$"
         ),
         metadata=(_PID_META, _THREAD_META),
+    ),
+    # -- Spring Boot benchmark: TS LEVEL [thread] logger key=value ... message
+    # The logsherlock-benchmarks shape: no pid/``---`` column, and the logger is
+    # followed by structured ``key=value`` fields (application, scenario, reqId,
+    # service, ...) before the human-readable text.
+    LinePattern(
+        _compile(rf"^{_TS}\s+{_LVL}\s+{_THREAD}\s+{_SPRING_LOGGER}\s+{_KV_FIELDS}{_MSG}$"),
+        metadata=(_THREAD_META,),
+        extra_metadata=_key_value_metadata,
     ),
     # -- PostgreSQL: TS TZ [pid] SEVERITY: message -------------------------
     LinePattern(

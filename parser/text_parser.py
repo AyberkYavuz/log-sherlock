@@ -106,6 +106,10 @@ class PlainTextParser(BaseParser):
         recorded; nothing is invented. Each field's ``cast`` is applied
         defensively — an unconvertible value is kept as its original string
         rather than raising, honouring the parser's never-raise contract.
+
+        A pattern whose metadata keys are not known up front (a run of
+        ``key=value`` tokens, say) supplies an ``extra_metadata`` builder; its
+        result is merged on top of the declared fields.
         """
         metadata: dict[str, Any] = {}
         for spec in pattern.metadata:
@@ -116,6 +120,8 @@ class PlainTextParser(BaseParser):
             if not value:
                 continue
             metadata[spec.key] = _coerce(value, spec.cast)
+        if pattern.extra_metadata is not None:
+            metadata.update(pattern.extra_metadata(groups))
         return metadata
 
     @staticmethod
