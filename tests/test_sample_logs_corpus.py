@@ -42,6 +42,16 @@ def _corpus_files() -> list[str]:
 # suite automatically.
 EXPECTED_FORMAT: dict[str, str] = {
     "java_spring_boot.log": "text",
+    # Real logsherlock-benchmarks Spring Boot captures: one file per scenario,
+    # ``TS LEVEL [thread] logger key=value ... message``.
+    "java_spring_boot_NORMAL.text.log": "text",
+    "java_spring_boot_INVALID_ORDER.text.log": "text",
+    "java_spring_boot_OUT_OF_STOCK.text.log": "text",
+    "java_spring_boot_PAYMENT_DECLINED.text.log": "text",
+    "java_spring_boot_SHIPPING_DELAY.text.log": "text",
+    "java_spring_boot_json.log": "json",
+    "typescript_pino_first_test.log": "json",
+    "typescript_pino_recovery.log": "json",
     "postgresql.log": "text",
     "python_logs.log": "text",
     "simple.log": "text",
@@ -151,6 +161,131 @@ def test_spring_boot_all_structured_lines_have_thread_and_pid() -> None:
         assert entry["logger"] is not None
         assert entry["metadata"]["pid"] == 12345
         assert "thread" in entry["metadata"]
+
+
+# ---------------------------------------------------------------------------
+# Spring Boot (logsherlock-benchmarks): one file per scenario, each line
+# ``TS LEVEL [thread] BenchmarkLoggerImpl key=value ... message``. The logger,
+# the thread and every structured field must be lifted, and the trailing
+# human-readable text must survive as the message.
+# ---------------------------------------------------------------------------
+
+
+# Scenario file -> (expected record count, expected WARN count).
+_BENCHMARK_SPRING_FILES: dict[str, tuple[int, int]] = {
+    "java_spring_boot_NORMAL.text.log": (10, 0),
+    "java_spring_boot_INVALID_ORDER.text.log": (3, 1),
+    "java_spring_boot_OUT_OF_STOCK.text.log": (6, 2),
+    "java_spring_boot_PAYMENT_DECLINED.text.log": (9, 2),
+    "java_spring_boot_SHIPPING_DELAY.text.log": (11, 1),
+}
+
+# Fields every benchmark line carries a value for (``orderId``, ``paymentId``
+# and ``shipmentId`` are empty until the workflow reaches that stage).
+_ALWAYS_PRESENT_FIELDS = (
+    "application",
+    "environment",
+    "schemaVersion",
+    "scenario",
+    "reqId",
+    "traceId",
+    "customerId",
+    "productId",
+    "service",
+    "component",
+)
+
+
+@pytest.mark.parametrize("name", sorted(_BENCHMARK_SPRING_FILES))
+def test_benchmark_spring_all_records_parsed(name: str) -> None:
+    expected_count, _ = _BENCHMARK_SPRING_FILES[name]
+    assert len(_entries(name)) == expected_count
+
+
+@pytest.mark.parametrize("name", sorted(_BENCHMARK_SPRING_FILES))
+def test_benchmark_spring_logger_and_thread_extracted(name: str) -> None:
+    for entry in _entries(name):
+        assert entry["logger"] == "BenchmarkLoggerImpl"
+        assert entry["metadata"]["thread"].startswith("http-nio-8080-exec-")
+
+
+@pytest.mark.parametrize("name", sorted(_BENCHMARK_SPRING_FILES))
+def test_benchmark_spring_structured_fields_extracted(name: str) -> None:
+    scenario = name.removeprefix("java_spring_boot_").removesuffix(".text.log")
+    for entry in _entries(name):
+        metadata = entry["metadata"]
+        for key in _ALWAYS_PRESENT_FIELDS:
+            assert key in metadata, f"{key} missing from {metadata}"
+        assert metadata["application"] == "logsherlock-order-service"
+        assert metadata["environment"] == "benchmark"
+        assert metadata["scenario"] == scenario
+
+
+@pytest.mark.parametrize("name", sorted(_BENCHMARK_SPRING_FILES))
+def test_benchmark_spring_message_excludes_structured_fields(name: str) -> None:
+    for entry in _entries(name):
+        message = entry["message"]
+        # The message is the human-readable tail only: no field token, no
+        # logger, no thread bracket leaking into it.
+        for key in _ALWAYS_PRESENT_FIELDS:
+            assert f"{key}=" not in message
+        assert "BenchmarkLoggerImpl" not in message
+        assert "http-nio-8080-exec-" not in message
+
+
+@pytest.mark.parametrize("name", sorted(_BENCHMARK_SPRING_FILES))
+def test_benchmark_spring_timestamps_are_parsed(name: str) -> None:
+    for entry in _entries(name):
+        assert isinstance(entry["timestamp"], datetime)
+        assert entry["timestamp"].year == 2026
+        assert entry["timestamp"].month == 8
+
+
+@pytest.mark.parametrize("name", sorted(_BENCHMARK_SPRING_FILES))
+def test_benchmark_spring_levels(name: str) -> None:
+    _, expected_warns = _BENCHMARK_SPRING_FILES[name]
+    levels = [e["level"] for e in _entries(name)]
+    assert set(levels) <= {"INFO", "WARN"}
+    assert levels.count("WARN") == expected_warns
+
+
+def test_benchmark_spring_invalid_order_warning_line() -> None:
+    entry = next(
+        e for e in _entries("java_spring_boot_INVALID_ORDER.text.log")
+        if e["level"] == "WARN"
+    )
+    assert entry["logger"] == "BenchmarkLoggerImpl"
+    assert entry["message"] == (
+        "Order ORDER-5001 rejected during validation: "
+        "quantity must be greater than zero but was 0"
+    )
+    assert entry["metadata"] == {
+        "thread": "http-nio-8080-exec-3",
+        "application": "logsherlock-order-service",
+        "environment": "benchmark",
+        "schemaVersion": "1",
+        "scenario": "INVALID_ORDER",
+        "reqId": "REQ-1001",
+        "traceId": "TRACE-1001",
+        "orderId": "ORDER-5001",
+        "customerId": "CUSTOMER-48",
+        "productId": "PRODUCT-19",
+        "service": "ORDER",
+        "component": "VALIDATOR",
+    }
+
+
+def test_benchmark_spring_empty_fields_are_omitted_not_corrupting() -> None:
+    # The first line of every scenario has ``orderId=`` empty; the fields that
+    # follow it are still extracted.
+    first = _entries("java_spring_boot_NORMAL.text.log")[0]
+    assert "orderId" not in first["metadata"]
+    assert first["metadata"]["customerId"] == "CUSTOMER-48"
+    assert first["metadata"]["component"] == "API"
+    # A later line, once the order exists, does carry it.
+    assert _entries("java_spring_boot_NORMAL.text.log")[1]["metadata"]["orderId"] == (
+        "ORDER-5001"
+    )
 
 
 # ---------------------------------------------------------------------------

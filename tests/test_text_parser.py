@@ -148,6 +148,100 @@ def test_spring_boot_pid_is_int(parser: PlainTextParser) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Spring Boot benchmark pattern (logsherlock-benchmarks): no pid/``---`` column,
+# structured ``key=value`` fields between the logger and the message.
+# ---------------------------------------------------------------------------
+
+
+_BENCHMARK_LINE = (
+    "2026-08-10T15:13:18.099 WARN  [http-nio-8080-exec-3] BenchmarkLoggerImpl "
+    "application=logsherlock-order-service environment=benchmark schemaVersion=1 "
+    "scenario=INVALID_ORDER reqId=REQ-1001 traceId=TRACE-1001 orderId=ORDER-5001 "
+    "customerId=CUSTOMER-48 productId=PRODUCT-19 paymentId= shipmentId= "
+    "service=ORDER component=VALIDATOR "
+    "Order ORDER-5001 rejected during validation: quantity must be greater than zero but was 0"
+)
+
+
+def test_spring_boot_benchmark_full_extraction(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, _BENCHMARK_LINE)
+    assert entry is not None
+    assert entry["timestamp"] == datetime(2026, 8, 10, 15, 13, 18, 99_000)
+    assert entry["level"] == "WARN"
+    assert entry["logger"] == "BenchmarkLoggerImpl"
+    assert entry["message"] == (
+        "Order ORDER-5001 rejected during validation: "
+        "quantity must be greater than zero but was 0"
+    )
+    assert entry["metadata"] == {
+        "thread": "http-nio-8080-exec-3",
+        "application": "logsherlock-order-service",
+        "environment": "benchmark",
+        "schemaVersion": "1",
+        "scenario": "INVALID_ORDER",
+        "reqId": "REQ-1001",
+        "traceId": "TRACE-1001",
+        "orderId": "ORDER-5001",
+        "customerId": "CUSTOMER-48",
+        "productId": "PRODUCT-19",
+        "service": "ORDER",
+        "component": "VALIDATOR",
+    }
+
+
+def test_spring_boot_benchmark_empty_fields_do_not_corrupt_following_ones(
+    parser: PlainTextParser,
+) -> None:
+    # ``orderId=`` / ``paymentId=`` / ``shipmentId=`` carry no value: they are
+    # not invented into metadata, and the fields after them still parse.
+    line = (
+        "2026-08-10T15:13:18.098 INFO  [http-nio-8080-exec-3] BenchmarkLoggerImpl "
+        "orderId= customerId=CUSTOMER-48 paymentId= shipmentId= "
+        "service=ORDER component=API "
+        "Received order request for 0 x PRODUCT-19 from customer CUSTOMER-48"
+    )
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert "orderId" not in entry["metadata"]
+    assert "paymentId" not in entry["metadata"]
+    assert "shipmentId" not in entry["metadata"]
+    assert entry["metadata"]["customerId"] == "CUSTOMER-48"
+    assert entry["metadata"]["service"] == "ORDER"
+    assert entry["metadata"]["component"] == "API"
+    assert entry["message"] == (
+        "Received order request for 0 x PRODUCT-19 from customer CUSTOMER-48"
+    )
+
+
+def test_spring_boot_benchmark_message_stops_at_first_non_field_token(
+    parser: PlainTextParser,
+) -> None:
+    # A message may itself contain ``=``; only the leading run of key=value
+    # tokens is structured, the rest stays in the message verbatim.
+    line = (
+        "2026-08-10T15:13:18.099 INFO  [http-nio-8080-exec-3] BenchmarkLoggerImpl "
+        "service=ORDER Database timeout while fetching order id=1024"
+    )
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["metadata"] == {"thread": "http-nio-8080-exec-3", "service": "ORDER"}
+    assert entry["message"] == "Database timeout while fetching order id=1024"
+
+
+def test_spring_boot_classic_format_is_unaffected(parser: PlainTextParser) -> None:
+    # The original ``pid --- [thread] logger :`` layout keeps its own pattern.
+    line = (
+        "2026-07-22 10:15:30.123 INFO 12345 --- [main] "
+        "c.logsherlock.Application : Starting LogSherlockApplication"
+    )
+    entry = parser.parse_line(1, line)
+    assert entry is not None
+    assert entry["logger"] == "c.logsherlock.Application"
+    assert entry["message"] == "Starting LogSherlockApplication"
+    assert entry["metadata"] == {"thread": "main", "pid": 12345}
+
+
+# ---------------------------------------------------------------------------
 # PostgreSQL pattern
 # ---------------------------------------------------------------------------
 
