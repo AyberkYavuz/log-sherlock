@@ -20,12 +20,15 @@ import graph
 import models
 import parser.json_parser as json_parser
 import parser.text_parser as text_parser
-from models import LogFormat, ParsedLogEntry, ParserMetrics
+import stats.aggregations as aggregations
+from models import LogFormat, ParsedLogEntry, ParserMetrics, Statistics
 
-# Resolved via importlib because the ``parser`` package re-exports a
-# ``parser_node`` *function*, which shadows the ``parser.parser_node`` submodule
-# attribute; ``import_module`` returns the module object regardless.
+# Resolved via importlib because the ``parser`` / ``stats`` packages re-export a
+# ``parser_node`` / ``statistics_node`` *function*, which shadows the
+# same-named submodule attribute; ``import_module`` returns the module object
+# regardless.
 parser_node_module = importlib.import_module("parser.parser_node")
+statistics_node_module = importlib.import_module("stats.statistics_node")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -60,6 +63,13 @@ def test_exactly_one_parser_metrics_definition() -> None:
     assert files[0] == _REPO_ROOT / "models" / "parser_metrics.py"
 
 
+def test_exactly_one_statistics_definition() -> None:
+    for name in ("Statistics", "CategoryCount", "SeveritySummary", "TimestampCoverage"):
+        files = _count_class_definitions(name)
+        assert len(files) == 1, f"expected 1 {name} definition, found {files}"
+        assert files[0] == _REPO_ROOT / "models" / "statistics.py"
+
+
 # -- shared imports (identity, not duplication) -----------------------------
 
 
@@ -72,13 +82,28 @@ def test_parser_imports_shared_models() -> None:
     assert parser_node_module.ParserMetrics is ParserMetrics
 
 
+def test_stats_imports_shared_models() -> None:
+    assert statistics_node_module.Statistics is Statistics
+    assert statistics_node_module.ParsedLogEntry is ParsedLogEntry
+    assert aggregations.CategoryCount is models.CategoryCount
+
+
 def test_graph_imports_shared_models() -> None:
     assert graph.ParsedLogEntry is ParsedLogEntry
     assert graph.ParserMetrics is ParserMetrics
+    assert graph.Statistics is Statistics
 
 
 def test_models_package_exports() -> None:
-    assert set(models.__all__) == {"LogFormat", "ParsedLogEntry", "ParserMetrics"}
+    assert set(models.__all__) == {
+        "LogFormat",
+        "ParsedLogEntry",
+        "ParserMetrics",
+        "CategoryCount",
+        "SeveritySummary",
+        "Statistics",
+        "TimestampCoverage",
+    }
 
 
 # -- TypedDict shape --------------------------------------------------------
@@ -95,6 +120,17 @@ def test_parsed_log_entry_is_typeddict() -> None:
         "logger",
         "message",
         "metadata",
+    }
+
+
+def test_statistics_is_typeddict() -> None:
+    assert hasattr(Statistics, "__required_keys__")
+    assert set(Statistics.__annotations__) == {
+        "level_distribution",
+        "logger_distribution",
+        "severity",
+        "timestamp_coverage",
+        "metadata_distributions",
     }
 
 
