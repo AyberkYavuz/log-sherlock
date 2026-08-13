@@ -8,10 +8,12 @@ This module defines *only* the graph architecture for LogSherlock:
     * the fixed graph topology,
     * a ``compile_graph()`` factory.
 
-No business logic lives here yet. Every node is a deterministic stub that
-documents its future responsibility via a ``TODO`` block and returns an empty
-state delta. Prompts, LLM calls, parsing, recommendation logic and report
-rendering are intentionally left unimplemented.
+No business logic lives here: implemented nodes are built in their own feature
+packages (``parser/``, ``stats/``) and merely registered below. Every node that
+is not implemented yet is a deterministic stub that documents its future
+responsibility via a ``TODO`` block and returns an empty state delta. Prompts,
+LLM calls, recommendation logic and report rendering are intentionally left
+unimplemented.
 
 Topology (fixed workflow)::
 
@@ -38,26 +40,26 @@ from langgraph.graph.state import CompiledStateGraph
 # Shared graph models live in the dedicated ``models`` package — the single
 # source of truth for every structure that crosses a node boundary. Feature
 # packages (parser, statistics, ...) import from here; they never redefine.
-from models import ParsedLogEntry, ParserMetrics
+from models import ParsedLogEntry, ParserMetrics, Statistics
 
-# The parser node is implemented as a standalone deterministic package
-# (see ``parser/``). It is imported here and registered directly in
-# ``build_graph`` — this module no longer defines a parser stub.
+# The parser and statistics nodes are implemented as standalone deterministic
+# packages (see ``parser/`` and ``stats/``). They are imported here and
+# registered directly in ``build_graph`` — this module defines no stub for them.
 from parser import parser_node
+from stats import statistics_node
 
 # ---------------------------------------------------------------------------
 # Payload type aliases
 # ---------------------------------------------------------------------------
-# Concrete models (``ParsedLogEntry``, ``ParserMetrics``) now live in the shared
-# ``models`` package. The aliases below remain deliberately loose
-# (``dict[str, Any]``) placeholders for payloads whose nodes are not yet
+# Concrete models (``ParsedLogEntry``, ``ParserMetrics``, ``Statistics``) now
+# live in the shared ``models`` package. The aliases below remain deliberately
+# loose (``dict[str, Any]``) placeholders for payloads whose nodes are not yet
 # implemented; each should graduate into a ``models`` module (``ErrorSummary``,
-# ``PatternSummary``, ``Statistics``, ``TimelineEvent``,
-# ``HistoricalInvestigation``, ...) as that node lands.
+# ``PatternSummary``, ``TimelineEvent``, ``HistoricalInvestigation``, ...) as
+# that node lands.
 
 ErrorSummary = dict[str, Any]
 PatternSummary = dict[str, Any]
-Statistics = dict[str, Any]
 TimelineEvent = dict[str, Any]
 HistoricalInvestigation = dict[str, Any]
 
@@ -205,20 +207,6 @@ def pattern_analysis_node(state: LogSherlockState) -> LogSherlockState:
         * Produce a ``PatternSummary`` describing notable patterns.
     """
     return {"pattern_summary": {}, "completed_stages": ["pattern_analysis"]}
-
-
-def statistics_node(state: LogSherlockState) -> LogSherlockState:
-    """Deterministic aggregation over ``parsed_logs`` (parallel branch).
-
-    TODO:
-        * Compute counts by level, logger, error type and time bucket.
-        * Compute rates, percentiles and simple distributions.
-        * Reuse ``parser_metrics`` for parser-health figures (total/blank/
-          parsed/malformed/missing-timestamp line counts) rather than
-          recomputing them from ``raw_logs``.
-        * Populate ``statistics`` — no LLM involved.
-    """
-    return {"statistics": {}, "completed_stages": ["statistics"]}
 
 
 def timeline_node(state: LogSherlockState) -> LogSherlockState:
