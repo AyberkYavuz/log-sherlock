@@ -64,11 +64,32 @@ def test_timestamp_without_level(parser: PlainTextParser) -> None:
     assert entry["message"] == "heartbeat ok"
 
 
-def test_syslog_timestamp(parser: PlainTextParser) -> None:
+def test_syslog_yearless_timestamp_is_none(parser: PlainTextParser) -> None:
     entry = parser.parse_line(1, "Jan 10 14:52:31 sshd accepted connection")
     assert entry is not None
-    # Syslog has no year -> stdlib default year 1900 (documented limitation).
-    assert entry["timestamp"] == datetime(1900, 1, 10, 14, 52, 31)
+    # Syslog carries no year, so the stamp is incomplete and reported missing.
+    assert entry["timestamp"] is None
+    # The line itself is still parsed: only the timestamp is unavailable.
+    assert entry["message"] == "sshd accepted connection"
+    assert entry["raw"] == "Jan 10 14:52:31 sshd accepted connection"
+
+
+def test_syslog_yearless_february_29_is_none(parser: PlainTextParser) -> None:
+    entry = parser.parse_line(1, "Feb 29 12:00:00 sshd leap-day event")
+    assert entry is not None
+    assert entry["timestamp"] is None
+
+
+def test_mixed_complete_and_yearless_lines_do_not_influence_each_other(
+    parser: PlainTextParser,
+) -> None:
+    # No cross-record inference: the dated line does not lend its year to the
+    # yearless one, in either order.
+    yearless = parser.parse_line(1, "Jan 10 14:52:31 INFO cache miss")
+    complete = parser.parse_line(2, "2026-08-12T10:15:30Z INFO started")
+    assert yearless is not None and complete is not None
+    assert yearless["timestamp"] is None
+    assert complete["timestamp"] == datetime(2026, 8, 12, 10, 15, 30, tzinfo=timezone.utc)
 
 
 def test_unstructured_line_keeps_whole_message(parser: PlainTextParser) -> None:

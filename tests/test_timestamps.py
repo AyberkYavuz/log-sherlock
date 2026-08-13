@@ -34,13 +34,31 @@ def test_iso_with_fractional_seconds() -> None:
     )
 
 
-def test_syslog_format() -> None:
-    # No year in syslog -> stdlib default year 1900.
-    assert parse_timestamp("Jan 10 14:52:31") == datetime(1900, 1, 10, 14, 52, 31)
+def test_syslog_yearless_is_none() -> None:
+    # Syslog carries no year, so the stamp is incomplete: the parser reports it
+    # as missing rather than completing it from anywhere.
+    assert parse_timestamp("Jan 10 14:52:31") is None
 
 
-def test_syslog_space_padded_day() -> None:
-    assert parse_timestamp("Jan  1 14:52:31") == datetime(1900, 1, 1, 14, 52, 31)
+def test_syslog_space_padded_day_is_none() -> None:
+    assert parse_timestamp("Jan  1 14:52:31") is None
+
+
+def test_yearless_never_becomes_year_1900() -> None:
+    # Regression guard: ``strptime``'s default epoch must never leak out as a
+    # real event time. 1900 would sort before every genuine timestamp.
+    for value in ("Jan 10 14:52:31", "Jan  1 14:52:31", "Dec 31 23:59:59"):
+        assert parse_timestamp(value) is None
+
+
+def test_yearless_fractional_seconds_is_none() -> None:
+    assert parse_timestamp("Jan 10 14:52:31.123") is None
+
+
+def test_yearless_february_29_is_none_not_an_error() -> None:
+    # Feb 29 exists only in a leap year, and 1900 was not one — under the old
+    # behaviour this raised inside ``strptime``. It is simply incomplete.
+    assert parse_timestamp("Feb 29 12:00:00") is None
 
 
 def test_nestjs_us_locale_am() -> None:

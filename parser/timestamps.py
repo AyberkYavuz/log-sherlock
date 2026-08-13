@@ -12,17 +12,16 @@ Supported formats (standard library only):
         * ``2024-01-01 12:30:45``             (space separator → naive)
         * ``2024-01-01 12:30:45.123``         (fractional seconds → naive)
 
-    Syslog (RFC 3164 style, no year):
-        * ``Jan 10 14:52:31``
-        * ``Jan  1 14:52:31``                 (space-padded day)
-
     US locale-style (12-hour clock, e.g. NestJS' default logger):
         * ``07/22/2026, 10:15:30 AM``
 
 Notes:
-    * Syslog timestamps carry no year, so they parse to the standard-library
-      default year (1900). This is a documented limitation of the format, not
-      an invented value — the source simply does not provide a year.
+    * Only *complete* timestamps are normalized. A value that omits a component
+      of the date — notably the syslog (RFC 3164) shape ``Jan 10 14:52:31``,
+      which carries no year — yields ``None``, because the parser never invents
+      the part the source did not provide. Left to the standard library such a
+      value would silently acquire ``strptime``'s default year (1900), which
+      reads downstream as a real event time rather than as missing information.
     * Anything unrecognised (including numeric epochs) returns ``None``. The
       function never raises: one bad timestamp must not stop the investigation.
 """
@@ -35,8 +34,14 @@ from typing import Any
 # Non-ISO formats attempted in order, each via ``datetime.strptime``. Kept as a
 # list so adding a format later is a one-line change. ISO 8601 is handled
 # separately by ``fromisoformat`` (it covers all the ISO variants above).
+#
+# Every format here MUST describe a complete date and time. ``strptime`` fills
+# any component the format omits from its default epoch (1900-01-01), so a
+# yearless format such as syslog's ``"%b %d %H:%M:%S"`` would not report the
+# missing year — it would fabricate one. Such formats are deliberately absent:
+# the shapes they cover fall through to ``None``, which is how the parser says
+# "the source did not provide this".
 _STRPTIME_FORMATS: tuple[str, ...] = (
-    "%b %d %H:%M:%S",  # syslog: "Jan 10 14:52:31"
     "%m/%d/%Y, %I:%M:%S %p",  # NestJS logger: "07/22/2026, 10:15:30 AM"
 )
 
@@ -45,8 +50,9 @@ def parse_timestamp(value: Any) -> datetime | None:
     """Normalize a raw timestamp value to a :class:`datetime`, or ``None``.
 
     Accepts an already-``datetime`` value (returned as-is), or a string in any
-    supported format. Missing, blank, or unrecognised values yield ``None``.
-    Deterministic and exception-free by contract.
+    supported format. Missing, blank, incomplete (e.g. yearless syslog stamps)
+    or unrecognised values yield ``None``. Deterministic and exception-free by
+    contract, and never derives a missing component from context.
 
     Args:
         value: The raw timestamp from a log record (str, datetime, or None).
@@ -77,8 +83,8 @@ def _parse_iso(text: str) -> datetime | None:
 def _parse_strptime(text: str) -> datetime | None:
     """Try each non-ISO format in :data:`_STRPTIME_FORMATS`, or return ``None``.
 
-    Runs of whitespace are collapsed first so space-padded syslog days
-    (``"Jan  1"``) match a single-space format string.
+    Runs of whitespace are collapsed first so a value padded with extra spaces
+    still matches a single-space format string.
     """
     normalized = " ".join(text.split())
     for fmt in _STRPTIME_FORMATS:

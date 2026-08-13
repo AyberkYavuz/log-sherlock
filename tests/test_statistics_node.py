@@ -581,6 +581,55 @@ def test_runs_over_every_sample_log(name: str) -> None:
     )
 
 
+def test_yearless_timestamps_count_as_without_timestamp() -> None:
+    # The parser reports a yearless syslog stamp as ``None``; statistics simply
+    # counts what it is given. No repair or inference happens on this side.
+    parsed = parser_node(
+        {
+            "raw_logs": "\n".join(
+                [
+                    "Jan 10 14:52:31 INFO cache miss",
+                    "2026-08-12T10:15:30Z INFO started",
+                ]
+            )
+        }
+    )
+    assert [e["timestamp"] for e in parsed["parsed_logs"]] == [
+        None,
+        datetime(2026, 8, 12, 10, 15, 30, tzinfo=timezone.utc),
+    ]
+    coverage = statistics_node(parsed)["statistics"]["timestamp_coverage"]
+    assert coverage == {
+        "with_timestamp": 1,
+        "without_timestamp": 1,
+        "earliest": "2026-08-12T10:15:30+00:00",
+        "latest": "2026-08-12T10:15:30+00:00",
+    }
+
+
+def test_timestamps_sample_span_excludes_yearless_records() -> None:
+    # timestamps.log mixes ISO, space-separated, yearless syslog and garbage.
+    # Only the two complete stamps may define the span — no year 1900 anywhere.
+    parsed = parser_node({"raw_logs": (_SAMPLE_DIR / "timestamps.log").read_text()})
+    coverage = statistics_node(parsed)["statistics"]["timestamp_coverage"]
+    assert coverage["with_timestamp"] == 2
+    assert coverage["without_timestamp"] == 2
+    # Both complete stamps denote the same instant (one aware, one naive read as
+    # UTC by the comparison layer), so the span collapses onto that instant.
+    assert coverage["earliest"] == "2026-07-22T10:15:30+00:00"
+    assert coverage["latest"] == "2026-07-22T10:15:30+00:00"
+
+
+def test_no_sample_log_yields_a_year_1900_timestamp() -> None:
+    # Corpus-wide regression guard against ``strptime``'s default epoch leaking
+    # out of the parser as a real event time.
+    for path in sorted(_SAMPLE_DIR.glob("*.log")):
+        parsed = parser_node({"raw_logs": path.read_text()})
+        for entry in parsed["parsed_logs"]:
+            timestamp = entry["timestamp"]
+            assert timestamp is None or timestamp.year != 1900, path.name
+
+
 def test_fastapi_sample_metadata_is_discovered_not_hard_coded() -> None:
     parsed = parser_node({"raw_logs": (_SAMPLE_DIR / "fastapi.log").read_text()})
     statistics = statistics_node(parsed)["statistics"]

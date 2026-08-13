@@ -29,9 +29,12 @@ class ParsedLogEntry(TypedDict):
             traceable to the source.
         raw: The original, untouched line.
         timestamp: The event time as a normalized :class:`datetime`, or ``None``
-            when absent/unparseable. Normalization happens once, in the parser;
-            downstream nodes must never re-parse timestamps. May be timezone
-            aware or naive depending on what the source provided.
+            when absent, unparseable, or *incomplete* — a source stamp that
+            omits part of the date (e.g. yearless syslog's ``Jan 10 14:52:31``)
+            is ``None``, never a value completed from context. May be timezone
+            aware or naive depending on what the source provided. Normalization
+            happens once, in the parser; downstream nodes must never re-parse
+            timestamps.
         level: The upper-cased severity level (e.g. ``"INFO"``), or ``None``.
         logger: The logger / component name, or ``None``.
         message: The human-readable message (falls back to ``raw`` when no more
