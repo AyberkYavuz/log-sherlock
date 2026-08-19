@@ -10,7 +10,7 @@ Architectural rules:
     * This package contains no business logic and MUST NOT import any feature
       package — the dependency arrow always points *toward* models.
 
-Future shared models (``ErrorSummary``, ``PatternSummary``, ``TimelineEvent``,
+Future shared models (``ErrorSummary``, ``PatternSummary``,
 ``HistoricalInvestigation``, ``StructuredReport``, ``ExecutionMetadata``, ...)
 will be added here as their nodes are implemented, each in its own module and
 re-exported below.
@@ -27,6 +27,7 @@ from .statistics import (
     Statistics,
     TimestampCoverage,
 )
+from .timeline import MilestoneKind, TimelineEvent, TimelineEventType
 
 __all__ = [
     "LogFormat",
@@ -36,4 +37,7 @@ __all__ = [
     "SeveritySummary",
     "Statistics",
     "TimestampCoverage",
+    "MilestoneKind",
+    "TimelineEvent",
+    "TimelineEventType",
 ]
