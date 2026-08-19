@@ -9,11 +9,11 @@ This module defines *only* the graph architecture for LogSherlock:
     * a ``compile_graph()`` factory.
 
 No business logic lives here: implemented nodes are built in their own feature
-packages (``parser/``, ``stats/``) and merely registered below. Every node that
-is not implemented yet is a deterministic stub that documents its future
-responsibility via a ``TODO`` block and returns an empty state delta. Prompts,
-LLM calls, recommendation logic and report rendering are intentionally left
-unimplemented.
+packages (``parser/``, ``stats/``, ``timeline/``) and merely registered below.
+Every node that is not implemented yet is a deterministic stub that documents
+its future responsibility via a ``TODO`` block and returns an empty state
+delta. Prompts, LLM calls, recommendation logic and report rendering are
+intentionally left unimplemented.
 
 Topology (fixed workflow)::
 
@@ -40,27 +40,28 @@ from langgraph.graph.state import CompiledStateGraph
 # Shared graph models live in the dedicated ``models`` package — the single
 # source of truth for every structure that crosses a node boundary. Feature
 # packages (parser, statistics, ...) import from here; they never redefine.
-from models import ParsedLogEntry, ParserMetrics, Statistics
+from models import ParsedLogEntry, ParserMetrics, Statistics, TimelineEvent
 
-# The parser and statistics nodes are implemented as standalone deterministic
-# packages (see ``parser/`` and ``stats/``). They are imported here and
-# registered directly in ``build_graph`` — this module defines no stub for them.
+# The parser, statistics and timeline nodes are implemented as standalone
+# deterministic packages (see ``parser/``, ``stats/`` and ``timeline/``). They
+# are imported here and registered directly in ``build_graph`` — this module
+# defines no stub for them.
 from parser import parser_node
 from stats import statistics_node
+from timeline import timeline_node
 
 # ---------------------------------------------------------------------------
 # Payload type aliases
 # ---------------------------------------------------------------------------
-# Concrete models (``ParsedLogEntry``, ``ParserMetrics``, ``Statistics``) now
-# live in the shared ``models`` package. The aliases below remain deliberately
-# loose (``dict[str, Any]``) placeholders for payloads whose nodes are not yet
-# implemented; each should graduate into a ``models`` module (``ErrorSummary``,
-# ``PatternSummary``, ``TimelineEvent``, ``HistoricalInvestigation``, ...) as
-# that node lands.
+# Concrete models (``ParsedLogEntry``, ``ParserMetrics``, ``Statistics``,
+# ``TimelineEvent``) now live in the shared ``models`` package. The aliases
+# below remain deliberately loose (``dict[str, Any]``) placeholders for payloads
+# whose nodes are not yet implemented; each should graduate into a ``models``
+# module (``ErrorSummary``, ``PatternSummary``, ``HistoricalInvestigation``,
+# ...) as that node lands.
 
 ErrorSummary = dict[str, Any]
 PatternSummary = dict[str, Any]
-TimelineEvent = dict[str, Any]
 HistoricalInvestigation = dict[str, Any]
 
 AnalysisMode = Literal["fast", "standard", "deep"]
@@ -207,17 +208,6 @@ def pattern_analysis_node(state: LogSherlockState) -> LogSherlockState:
         * Produce a ``PatternSummary`` describing notable patterns.
     """
     return {"pattern_summary": {}, "completed_stages": ["pattern_analysis"]}
-
-
-def timeline_node(state: LogSherlockState) -> LogSherlockState:
-    """Deterministic timeline builder over ``parsed_logs`` (parallel branch).
-
-    TODO:
-        * Order significant events chronologically.
-        * Bucket events and mark inflection points (error onset, recovery).
-        * Populate ``timeline`` with ordered ``TimelineEvent`` records.
-    """
-    return {"timeline": [], "completed_stages": ["timeline"]}
 
 
 def recommendation_node(state: LogSherlockState) -> LogSherlockState:
