@@ -21,7 +21,14 @@ import models
 import parser.json_parser as json_parser
 import parser.text_parser as text_parser
 import stats.aggregations as aggregations
-from models import LogFormat, ParsedLogEntry, ParserMetrics, Statistics
+import timeline.buckets as timeline_buckets
+from models import (
+    LogFormat,
+    ParsedLogEntry,
+    ParserMetrics,
+    Statistics,
+    TimelineEvent,
+)
 
 # Resolved via importlib because the ``parser`` / ``stats`` packages re-export a
 # ``parser_node`` / ``statistics_node`` *function*, which shadows the
@@ -29,6 +36,7 @@ from models import LogFormat, ParsedLogEntry, ParserMetrics, Statistics
 # regardless.
 parser_node_module = importlib.import_module("parser.parser_node")
 statistics_node_module = importlib.import_module("stats.statistics_node")
+timeline_node_module = importlib.import_module("timeline.node")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -70,6 +78,12 @@ def test_exactly_one_statistics_definition() -> None:
         assert files[0] == _REPO_ROOT / "models" / "statistics.py"
 
 
+def test_exactly_one_timeline_event_definition() -> None:
+    files = _count_class_definitions("TimelineEvent")
+    assert len(files) == 1, f"expected 1 TimelineEvent definition, found {files}"
+    assert files[0] == _REPO_ROOT / "models" / "timeline.py"
+
+
 # -- shared imports (identity, not duplication) -----------------------------
 
 
@@ -88,10 +102,18 @@ def test_stats_imports_shared_models() -> None:
     assert aggregations.CategoryCount is models.CategoryCount
 
 
+def test_timeline_imports_shared_models() -> None:
+    assert timeline_node_module.TimelineEvent is TimelineEvent
+    assert timeline_node_module.ParsedLogEntry is ParsedLogEntry
+    assert timeline_buckets.TimelineEvent is TimelineEvent
+    assert timeline_buckets.ParsedLogEntry is ParsedLogEntry
+
+
 def test_graph_imports_shared_models() -> None:
     assert graph.ParsedLogEntry is ParsedLogEntry
     assert graph.ParserMetrics is ParserMetrics
     assert graph.Statistics is Statistics
+    assert graph.TimelineEvent is TimelineEvent
 
 
 def test_models_package_exports() -> None:
@@ -103,6 +125,9 @@ def test_models_package_exports() -> None:
         "SeveritySummary",
         "Statistics",
         "TimestampCoverage",
+        "MilestoneKind",
+        "TimelineEvent",
+        "TimelineEventType",
     }
 
 
@@ -145,6 +170,22 @@ def test_parser_metrics_is_typeddict() -> None:
         "parsed_lines",
         "malformed_lines",
         "missing_timestamp_lines",
+    }
+
+
+def test_timeline_event_is_typeddict() -> None:
+    assert hasattr(TimelineEvent, "__required_keys__")
+    assert set(TimelineEvent.__annotations__) == {
+        "event_type",
+        "timestamp",
+        "end_timestamp",
+        "milestone_kind",
+        "total_logs",
+        "error_count",
+        "warning_count",
+        "top_loggers",
+        "sample_messages",
+        "summary",
     }
 
 
