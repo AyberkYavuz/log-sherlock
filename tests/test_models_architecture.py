@@ -37,6 +37,8 @@ from models import (
 parser_node_module = importlib.import_module("parser.parser_node")
 statistics_node_module = importlib.import_module("stats.statistics_node")
 timeline_node_module = importlib.import_module("timeline.node")
+error_analysis_node_module = importlib.import_module("error_analysis.node")
+error_analysis_fingerprint = importlib.import_module("error_analysis.fingerprint")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -78,6 +80,18 @@ def test_exactly_one_statistics_definition() -> None:
         assert files[0] == _REPO_ROOT / "models" / "statistics.py"
 
 
+def test_exactly_one_error_analysis_definition() -> None:
+    for name in (
+        "ErrorSignature",
+        "ErrorSummary",
+        "LLMErrorSignatureEvaluation",
+        "LLMErrorAnalysisResult",
+    ):
+        files = _count_class_definitions(name)
+        assert len(files) == 1, f"expected 1 {name} definition, found {files}"
+        assert files[0] == _REPO_ROOT / "models" / "error_analysis.py"
+
+
 def test_exactly_one_timeline_event_definition() -> None:
     files = _count_class_definitions("TimelineEvent")
     assert len(files) == 1, f"expected 1 TimelineEvent definition, found {files}"
@@ -109,6 +123,17 @@ def test_timeline_imports_shared_models() -> None:
     assert timeline_buckets.ParsedLogEntry is ParsedLogEntry
 
 
+def test_error_analysis_imports_shared_models() -> None:
+    assert error_analysis_fingerprint.ErrorSignature is models.ErrorSignature
+    assert error_analysis_fingerprint.ErrorSummary is models.ErrorSummary
+    assert error_analysis_fingerprint.ParsedLogEntry is ParsedLogEntry
+    assert error_analysis_node_module.ErrorSummary is models.ErrorSummary
+    assert (
+        error_analysis_node_module.LLMErrorAnalysisResult
+        is models.LLMErrorAnalysisResult
+    )
+
+
 def test_graph_imports_shared_models() -> None:
     assert graph.ParsedLogEntry is ParsedLogEntry
     assert graph.ParserMetrics is ParserMetrics
@@ -118,6 +143,12 @@ def test_graph_imports_shared_models() -> None:
 
 def test_models_package_exports() -> None:
     assert set(models.__all__) == {
+        "AnalysisMode",
+        "ErrorSignature",
+        "ErrorSummary",
+        "LLMErrorAnalysisResult",
+        "LLMErrorSignatureEvaluation",
+        "LLMProvider",
         "LogFormat",
         "ParsedLogEntry",
         "ParserMetrics",
