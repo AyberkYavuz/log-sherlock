@@ -49,6 +49,9 @@ EXPECTED_FORMAT: dict[str, str] = {
     "java_spring_boot_OUT_OF_STOCK.text.log": "text",
     "java_spring_boot_PAYMENT_DECLINED.text.log": "text",
     "java_spring_boot_SHIPPING_DELAY.text.log": "text",
+    # The same capture at volume (~7.8k lines), in both encodings.
+    "java_spring_boot_large.text.log": "text",
+    "java_spring_boot_large.json.log": "json",
     "java_spring_boot_json.log": "json",
     "typescript_pino_first_test.log": "json",
     "typescript_pino_recovery.log": "json",
