@@ -9,7 +9,8 @@ This module defines *only* the graph architecture for LogSherlock:
     * a ``compile_graph()`` factory.
 
 No business logic lives here: implemented nodes are built in their own feature
-packages (``parser/``, ``stats/``, ``timeline/``) and merely registered below.
+packages (``parser/``, ``stats/``, ``timeline/``, ``error_analysis/``) and
+merely registered below.
 Every node that is not implemented yet is a deterministic stub that documents
 its future responsibility via a ``TODO`` block and returns an empty state
 delta. Prompts, LLM calls, recommendation logic and report rendering are
@@ -32,7 +33,7 @@ Topology (fixed workflow)::
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -40,12 +41,21 @@ from langgraph.graph.state import CompiledStateGraph
 # Shared graph models live in the dedicated ``models`` package — the single
 # source of truth for every structure that crosses a node boundary. Feature
 # packages (parser, statistics, ...) import from here; they never redefine.
-from models import ParsedLogEntry, ParserMetrics, Statistics, TimelineEvent
+from models import (
+    AnalysisMode,
+    ErrorSummary,
+    LLMProvider,
+    ParsedLogEntry,
+    ParserMetrics,
+    Statistics,
+    TimelineEvent,
+)
 
-# The parser, statistics and timeline nodes are implemented as standalone
-# deterministic packages (see ``parser/``, ``stats/`` and ``timeline/``). They
-# are imported here and registered directly in ``build_graph`` — this module
-# defines no stub for them.
+# The error_analysis, parser, statistics and timeline nodes are implemented as
+# standalone feature packages (see ``error_analysis/``, ``parser/``, ``stats/``
+# and ``timeline/``). They are imported here and registered directly in
+# ``build_graph`` — this module defines no stub for them.
+from error_analysis import error_analysis_node
 from parser import parser_node
 from stats import statistics_node
 from timeline import timeline_node
@@ -54,17 +64,14 @@ from timeline import timeline_node
 # Payload type aliases
 # ---------------------------------------------------------------------------
 # Concrete models (``ParsedLogEntry``, ``ParserMetrics``, ``Statistics``,
-# ``TimelineEvent``) now live in the shared ``models`` package. The aliases
-# below remain deliberately loose (``dict[str, Any]``) placeholders for payloads
-# whose nodes are not yet implemented; each should graduate into a ``models``
-# module (``ErrorSummary``, ``PatternSummary``, ``HistoricalInvestigation``,
-# ...) as that node lands.
+# ``TimelineEvent``, ``ErrorSummary``) now live in the shared ``models``
+# package. The aliases below remain deliberately loose (``dict[str, Any]``)
+# placeholders for payloads whose nodes are not yet implemented; each should
+# graduate into a ``models`` module (``PatternSummary``,
+# ``HistoricalInvestigation``, ...) as that node lands.
 
-ErrorSummary = dict[str, Any]
 PatternSummary = dict[str, Any]
 HistoricalInvestigation = dict[str, Any]
-
-AnalysisMode = Literal["fast", "standard", "deep"]
 
 
 class ExecutionMetadata(TypedDict, total=False):
@@ -120,6 +127,11 @@ class LogSherlockState(TypedDict, total=False):
     raw_logs: str
     investigation_timestamp: str
     analysis_mode: AnalysisMode
+    # Which vendor the LLM nodes should call. Paired with ``analysis_mode``,
+    # which selects the model *tier* within that vendor. Both are optional:
+    # each LLM node applies its own documented default (``"openai"`` /
+    # ``"standard"``) when the caller omits them.
+    llm_provider: LLMProvider
     # Summaries from previous investigations, supplied as graph input.
     # NOTE: we deliberately do *not* use LangGraph's memory/checkpointer for
     # history — the caller owns persistence and passes context in explicitly.
@@ -186,17 +198,6 @@ def coordinator_node(state: LogSherlockState) -> LogSherlockState:
         * Emit an ``investigation_notes`` entry for any recoverable input issue.
     """
     return {"completed_stages": ["coordinator"]}
-
-
-def error_analysis_node(state: LogSherlockState) -> LogSherlockState:
-    """LLM agent that reasons about errors in ``parsed_logs`` (parallel branch).
-
-    TODO:
-        * Prompt an LLM to identify, group and rank error signatures.
-        * Distinguish root errors from downstream/cascading noise.
-        * Produce an ``ErrorSummary`` (top errors, counts, severity, samples).
-    """
-    return {"error_summary": {}, "completed_stages": ["error_analysis"]}
 
 
 def pattern_analysis_node(state: LogSherlockState) -> LogSherlockState:
