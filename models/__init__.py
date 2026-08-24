@@ -10,14 +10,21 @@ Architectural rules:
     * This package contains no business logic and MUST NOT import any feature
       package — the dependency arrow always points *toward* models.
 
-Future shared models (``ErrorSummary``, ``PatternSummary``,
-``HistoricalInvestigation``, ``StructuredReport``, ``ExecutionMetadata``, ...)
-will be added here as their nodes are implemented, each in its own module and
-re-exported below.
+Future shared models (``PatternSummary``, ``HistoricalInvestigation``,
+``StructuredReport``, ``ExecutionMetadata``, ...) will be added here as their
+nodes are implemented, each in its own module and re-exported below.
 """
 
 from __future__ import annotations
 
+from .error_analysis import (
+    AnalysisMode,
+    ErrorSignature,
+    ErrorSummary,
+    LLMErrorAnalysisResult,
+    LLMErrorSignatureEvaluation,
+    LLMProvider,
+)
 from .log_format import LogFormat
 from .parsed_log import ParsedLogEntry
 from .parser_metrics import ParserMetrics
@@ -30,6 +37,12 @@ from .statistics import (
 from .timeline import MilestoneKind, TimelineEvent, TimelineEventType
 
 __all__ = [
+    "AnalysisMode",
+    "ErrorSignature",
+    "ErrorSummary",
+    "LLMErrorAnalysisResult",
+    "LLMErrorSignatureEvaluation",
+    "LLMProvider",
     "LogFormat",
     "ParsedLogEntry",
     "ParserMetrics",
