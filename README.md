@@ -1,8 +1,10 @@
 # LogSherlock
 
 LogSherlock is a log analysis platform built as a LangGraph workflow. It ingests
-raw log output from a variety of production systems and turns it into a clean,
-normalized, machine-readable form that later analysis stages can reason about.
+raw log output from a variety of production systems, turns it into a clean,
+normalized, machine-readable form, and then reasons about it: what the dataset
+contains, how the incident unfolded over time, which errors occurred, and which
+of them actually started it.
 
 The project is under active development. Its architecture is designed to grow
 one analysis stage at a time, and this document describes only the parts that
@@ -12,13 +14,34 @@ exist in the repository today.
 
 ## Current Status
 
-At present, the ingestion and parsing stage is the only fully implemented
-analysis component. The workflow wiring and the coordination layer that route
-work through the graph exist, but the Parser node is the single component that
-performs real log analysis.
+The graph pipeline has expanded well beyond parsing. Five nodes are now active
+and fully operational:
 
-This documentation will grow together with the implementation. As new stages are
-built, they will be documented here alongside the Parser node.
+- **`parser`** — deterministic ingestion. Detects the log format, parses every
+  line and normalizes it into a common schema, and reports structured parser
+  health metrics.
+- **`statistics`** — deterministic dataset composition. Level and logger
+  distributions, severity counts and ratios, timestamp coverage, and
+  distributions over dynamically discovered metadata keys.
+- **`timeline`** — deterministic temporal analysis. Adaptively sized time
+  buckets plus the milestones that make the shape readable: log coverage
+  boundaries, first and last error, and the error onset → peak → recovery
+  narrative.
+- **`error_analysis`** — deterministic error fingerprinting followed by a single
+  batched LLM pass. Collates multi-line tracebacks, masks variable tokens,
+  collapses identical failures into counted signatures, and asks a model which
+  signature is the root cause and how it cascaded. Five providers are supported
+  across three reasoning tiers.
+- **`web_search`** — the optional, opt-in detour between the two error-analysis
+  passes. Retrieves external documentation from Tavily for error signatures a
+  model cannot be expected to recognise, behind a relevance floor.
+
+Full per-node documentation — state contracts, algorithms, guarantees, provider
+handling and the web-search benchmark — lives in
+[`docs/GRAPH_README.md`](docs/GRAPH_README.md).
+
+The remaining nodes in the topology are still deterministic stubs, and this
+documentation will grow together with the implementation.
 
 ---
 
@@ -115,7 +138,7 @@ stages reason about data quality. They include:
 
 ---
 
-## Sample Logs
+## Sample Logs & Benchmarks
 
 The repository includes a `sample_logs/` directory containing representative log
 files from the supported ecosystems as well as some intentionally mixed and
@@ -125,8 +148,12 @@ malformed inputs. These files are used for:
 - regression testing
 - manual testing in LangGraph Studio
 - adding support for new ecosystems
+- end-to-end exercising of the statistics, timeline, error analysis and web
+  search nodes
 
-The sample logs currently available are:
+### Small fixtures
+
+Short, hand-written files that pin down one format or one edge case each:
 
 - `java_spring_boot.log`
 - `postgresql.log`
@@ -141,34 +168,87 @@ The sample logs currently available are:
 - `mixed_formats.log`
 - `malformed.log`
 
+### Realistic benchmark datasets
+
+Full-size, scenario-driven datasets that carry a real incident shape — a healthy
+baseline, a failure, and a recovery — rather than a handful of illustrative
+lines. These are the standard benchmarking inputs used across graph nodes,
+because they are the only inputs large enough to exercise adaptive bucket sizing,
+signature capping, traceback collation and metadata cardinality limits:
+
+- `sample_logs/fastapi_recovery.log`
+- `sample_logs/typescript_pino_recovery.log`
+- `sample_logs/java_spring_boot_large.text.log`
+- `sample_logs/java_spring_boot_large.json.log`
+
+---
+
+## logsherlock-benchmarks
+
+The realistic datasets listed above are **generated and maintained via the
+[logsherlock-benchmarks](https://github.com/AyberkYavuz/logsherlock-benchmarks)
+repository**, not written by hand in this repository. That project emits
+scenario-driven log output from instrumented FastAPI, Pino/TypeScript and Spring
+Boot applications; the files are then committed here so every node is developed
+and regression-tested against the same fixed corpus.
+
+Two consequences are worth knowing:
+
+- **The datasets are reproducible.** A benchmark file can be regenerated from the
+  benchmarks repository rather than being a one-off capture, so a scenario can be
+  extended or re-emitted when a node needs a case the corpus does not yet cover.
+- **The parser tracks the generator's output shape.** The Spring Boot benchmark
+  layout — `TS LEVEL [thread] logger key=value ... message`, with no pid column
+  and a run of structured `key=value` fields before the human-readable text — has
+  its own entry in the parser's pattern registry precisely because this is what
+  the benchmarks emit.
+
+These files also back the web-search benchmark documented in
+[`docs/GRAPH_README.md`](docs/GRAPH_README.md), where
+`java_spring_boot_large.json.log` is the large-dataset case.
+
 ---
 
 ## Testing
 
-Parser correctness is validated through several complementary approaches:
+Node correctness is validated through several complementary approaches:
 
-- automated unit tests for each parser and normalization helper
+- automated unit tests for each parser, normalization helper and aggregation
+- dedicated suites for the statistics, timeline, error analysis and web search
+  nodes, including the two-pass search loop and its routing
+- an architecture test that keeps shared models in the `models` package and
+  guards the dependency direction
 - regression tests that guard against quiet quality drops
 - a sample log corpus that exercises every supported ecosystem end to end
+- a local mock LLM server so the error-analysis paths can be tested without
+  reaching a provider
 - manual verification through LangGraph Studio
 
-Together these keep the parser stable as new ecosystems are added.
+Together these keep the graph stable as new nodes and ecosystems are added.
 
 ---
 
 ## Design Principles
 
-The parser is built around a small set of guiding principles:
+The graph is built around a small set of guiding principles:
 
 - **Extensible architecture** — New log ecosystems are added by extending an
   ordered registry of patterns rather than rewriting the parser.
 - **Pattern-based parsing** — Formats are described as focused, reusable patterns
   instead of one monolithic rule.
 - **Common output schema** — Every format is normalized into the same shape, so
-  the rest of the system depends on one representation.
+  the rest of the system depends on one representation. Every structure that
+  crosses a node boundary is defined once, in the shared `models` package.
 - **Graceful degradation** — Unknown or low-quality lines still produce useful
-  output; the parser never fails on unexpected input.
+  output; the parser never fails on unexpected input. The same holds one level
+  up: a failed LLM call or an unreachable search still publishes the
+  deterministic findings and records why, rather than killing the branch.
 - **Ecosystem-specific extraction** — Each supported format contributes its own
   structured fields and metadata where the source provides them.
+- **Determinism wherever it is available** — Everything that can be computed by
+  arithmetic is, including orderings and tiebreakers; the LLM is asked only for
+  what arithmetic cannot supply, and never overwrites a deterministic field.
+- **Nothing is invented** — A value the source did not provide stays absent. No
+  node repairs, infers or back-fills a missing timestamp, level or logger.
 - **Backward compatibility** — Existing formats keep working unchanged as new
   ones are introduced.
