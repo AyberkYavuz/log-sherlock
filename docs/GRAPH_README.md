@@ -57,7 +57,7 @@ reducer.
 
 ## Parser Node
 
-**Module:** `parser/parser_node.py` · **Entry point:** `parser_node(state)`
+**Module:** `graph_library/parser/parser_node.py` · **Entry point:** `parser_node(state)`
 
 The Parser node is the entry point for all log analysis. It converts `raw_logs`
 into normalized `parsed_logs` — the single source of truth every downstream node
@@ -71,7 +71,7 @@ consumes. It is fully deterministic: no LLM, no prompts, no network. The same
 ### What it does
 
 - **Detects the log format** by sampling the first 50 non-blank lines and scoring
-  each registered parser against them (`parser/parser_factory.py`).
+  each registered parser against them (`graph_library/parser/parser_factory.py`).
 - **Parses every line** with the winning parser, tolerating malformed input.
 - **Normalizes each line into a common schema**, so downstream consumers never
   need to know which system produced the logs.
@@ -101,12 +101,12 @@ wiring pick it up automatically.
 ### Supported log shapes
 
 `JSONLinesParser` handles any line that is a standalone JSON object, mapping
-known fields via the alias tables in `parser/normalization.py` (including numeric
+known fields via the alias tables in `graph_library/parser/normalization.py` (including numeric
 Pino/Bunyan levels, `30` → `INFO`) and preserving every remaining key as
 metadata.
 
 `PlainTextParser` is an engine over an ordered registry of focused patterns
-(`parser/patterns.py`), tried most-specific first:
+(`graph_library/parser/patterns.py`), tried most-specific first:
 
 - **Spring Boot** — `TS LEVEL pid --- [thread] logger : message`, with `pid` and
   `thread` lifted into metadata.
@@ -176,7 +176,7 @@ always holds. The same facts are also phrased for humans in
 
 ## Statistics Node
 
-**Module:** `stats/statistics_node.py` · **Entry point:** `statistics_node(state)`
+**Module:** `graph_library/stats/statistics_node.py` · **Entry point:** `statistics_node(state)`
 
 The Statistics node answers exactly one question about the parser's output —
 *"what does the parsed dataset contain?"* — and answers it with facts only: no
@@ -185,7 +185,7 @@ LLM, no prompts, no network, no interpretation.
 **Reads:** `parsed_logs`
 **Writes:** `statistics`, `completed_stages`
 
-Internally the aggregation runs on a pandas `DataFrame` (`stats/aggregations.py`),
+Internally the aggregation runs on a pandas `DataFrame` (`graph_library/stats/aggregations.py`),
 but the payload that leaves the module is plain, JSON-serializable Python — no
 DataFrame ever enters graph state.
 
@@ -242,7 +242,7 @@ An empty `parsed_logs` list is valid and yields an empty-but-well-formed payload
 
 ## Timeline Node
 
-**Module:** `timeline/node.py` · **Entry point:** `timeline_node(state)`
+**Module:** `graph_library/timeline/node.py` · **Entry point:** `timeline_node(state)`
 
 The Timeline node answers *"how did this incident unfold over time?"* — with
 arithmetic only. Given the same `parsed_logs` it always returns the same
@@ -343,7 +343,7 @@ a single note says so verbatim.
 
 ## Error Analysis Node
 
-**Module:** `error_analysis/node.py` · **Entry point:** `error_analysis_node(state)`
+**Module:** `graph_library/error_analysis/node.py` · **Entry point:** `error_analysis_node(state)`
 
 The Error Analysis node answers *"which errors happened, how often, and which of
 them actually started the incident?"* in two clearly separated passes: a
@@ -357,7 +357,7 @@ search was needed)
 
 ### The deterministic pass — fingerprinting
 
-`error_analysis/fingerprint.py` is pure arithmetic and regex. It exists to make
+`graph_library/error_analysis/fingerprint.py` is pure arithmetic and regex. It exists to make
 the LLM pass *possible*: a 700k-line log can hold tens of thousands of error
 records that are really a handful of distinct failures repeated, and sending them
 raw would blow any context window and bury the signal.
@@ -431,7 +431,7 @@ force-fitted, and signatures the model skipped keep their deterministic defaults
 
 ### Provider and model selection
 
-`error_analysis/llm_factory.py` maps a `(provider, mode)` pair to a configured
+`graph_library/error_analysis/llm_factory.py` maps a `(provider, mode)` pair to a configured
 LangChain chat model. Five providers are supported — `openai`, `anthropic`,
 `gemini`, `deepseek` and `local` (any OpenAI-compatible server: vLLM, Ollama,
 LM Studio, or `tests/mock_local_llm.py`) — across three tiers: `fast`,
@@ -488,7 +488,7 @@ summary and not a diagnosis.
 
 ## Web Search Node
 
-**Module:** `web_search/node.py` · **Entry point:** `web_search_node(state)`
+**Module:** `graph_library/web_search/node.py` · **Entry point:** `web_search_node(state)`
 
 The Web Search node is the optional detour between the Error Analysis node's two
 passes. It exists because the model knows the common failures cold and the rare
@@ -535,7 +535,7 @@ without it the join fires as soon as the three plain edges have been written and
 
 ### Retrieval and relevance
 
-`web_search/client.py` is the only module that talks to Tavily. Queries run at
+`graph_library/web_search/client.py` is the only module that talks to Tavily. Queries run at
 `search_depth="basic"` (the node wants the summary paragraph off a documentation
 page, not a thorough crawl), 3 results per query, a 20-second per-query timeout,
 and snippets truncated to 500 characters.

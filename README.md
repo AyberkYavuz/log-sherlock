@@ -216,7 +216,7 @@ Node correctness is validated through several complementary approaches:
 - automated unit tests for each parser, normalization helper and aggregation
 - dedicated suites for the statistics, timeline, error analysis and web search
   nodes, including the two-pass search loop and its routing
-- an architecture test that keeps shared models in the `models` package and
+- an architecture test that keeps shared models in the `graph_library.models` package and
   guards the dependency direction
 - regression tests that guard against quiet quality drops
 - a sample log corpus that exercises every supported ecosystem end to end
@@ -238,7 +238,7 @@ The graph is built around a small set of guiding principles:
   instead of one monolithic rule.
 - **Common output schema** — Every format is normalized into the same shape, so
   the rest of the system depends on one representation. Every structure that
-  crosses a node boundary is defined once, in the shared `models` package.
+  crosses a node boundary is defined once, in the shared `graph_library.models` package.
 - **Graceful degradation** — Unknown or low-quality lines still produce useful
   output; the parser never fails on unexpected input. The same holds one level
   up: a failed LLM call or an unreachable search still publishes the
