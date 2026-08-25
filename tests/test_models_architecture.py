@@ -86,6 +86,7 @@ def test_exactly_one_error_analysis_definition() -> None:
         "ErrorSummary",
         "LLMErrorSignatureEvaluation",
         "LLMErrorAnalysisResult",
+        "LLMSearchDecision",
     ):
         files = _count_class_definitions(name)
         assert len(files) == 1, f"expected 1 {name} definition, found {files}"
@@ -149,6 +150,8 @@ def test_models_package_exports() -> None:
         "LLMErrorAnalysisResult",
         "LLMErrorSignatureEvaluation",
         "LLMProvider",
+        "LLMSearchDecision",
+        "MAX_SEARCH_QUERIES",
         "LogFormat",
         "ParsedLogEntry",
         "ParserMetrics",
