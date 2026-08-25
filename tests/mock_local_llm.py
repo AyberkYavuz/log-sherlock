@@ -101,7 +101,7 @@ def extract_signature_ids(messages: list[dict[str, Any]]) -> list[str]:
 
 
 def build_analysis_payload(signature_ids: list[str]) -> dict[str, Any]:
-    """Build a response body matching :class:`~models.LLMErrorAnalysisResult`.
+    """Build a response body matching :class:`~graph_library.models.LLMErrorAnalysisResult`.
 
     Every id gets an evaluation, so the node's "did not evaluate" note stays
     silent and a genuine coverage gap in the node would show up. The last id —

@@ -1,4 +1,4 @@
-"""Unit tests for :func:`parser.timestamps.parse_timestamp`."""
+"""Unit tests for :func:`graph_library.parser.timestamps.parse_timestamp`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from parser.timestamps import parse_timestamp
+from graph_library.parser.timestamps import parse_timestamp
 
 
 def test_iso_with_z_suffix() -> None:

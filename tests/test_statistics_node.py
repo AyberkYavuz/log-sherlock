@@ -1,4 +1,4 @@
-"""Unit tests for the deterministic Statistics Node (``stats/``).
+"""Unit tests for the deterministic Statistics Node (``graph_library/stats/``).
 
 Entries are built with :func:`_entry`, which mirrors the ``ParsedLogEntry``
 schema the parser emits, so these tests exercise the node against exactly the
@@ -24,10 +24,10 @@ from typing import Any
 import pytest
 
 from graph import compile_graph
-from models import ParsedLogEntry
-from parser.parser_node import parser_node
-from stats import MAX_METADATA_CARDINALITY, TOP_VALUE_LIMIT, compute_statistics
-from stats.statistics_node import statistics_node
+from graph_library.models import ParsedLogEntry
+from graph_library.parser.parser_node import parser_node
+from graph_library.stats import MAX_METADATA_CARDINALITY, TOP_VALUE_LIMIT, compute_statistics
+from graph_library.stats.statistics_node import statistics_node
 
 _SAMPLE_DIR = Path(__file__).resolve().parent.parent / "sample_logs"
 

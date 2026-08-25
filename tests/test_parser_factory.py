@@ -1,10 +1,10 @@
-"""Unit tests for format detection in :mod:`parser.parser_factory`."""
+"""Unit tests for format detection in :mod:`graph_library.parser.parser_factory`."""
 
 from __future__ import annotations
 
-from parser.json_parser import JSONLinesParser
-from parser.parser_factory import Detection, detect, sample_lines, select_parser
-from parser.text_parser import PlainTextParser
+from graph_library.parser.json_parser import JSONLinesParser
+from graph_library.parser.parser_factory import Detection, detect, sample_lines, select_parser
+from graph_library.parser.text_parser import PlainTextParser
 
 
 def test_selects_json_for_json_lines() -> None:

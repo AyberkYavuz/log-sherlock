@@ -1,4 +1,4 @@
-"""Unit tests for :class:`parser.text_parser.PlainTextParser`."""
+"""Unit tests for :class:`graph_library.parser.text_parser.PlainTextParser`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from parser.text_parser import PlainTextParser
+from graph_library.parser.text_parser import PlainTextParser
 
 
 @pytest.fixture

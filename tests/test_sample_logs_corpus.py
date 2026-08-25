@@ -2,7 +2,7 @@
 
 These files were manually validated through LangGraph Studio and now serve as
 the parser's regression suite. Every ``*.log`` file is run end-to-end through
-:func:`parser.parser_node.parser_node`; the tests assert on the facts that
+:func:`graph_library.parser.parser_node.parser_node`; the tests assert on the facts that
 matter — parser selection, parser-metrics invariants, parsed-line counts,
 timestamp normalization, and per-ecosystem level / logger / message / metadata
 extraction — so a future change that quietly regresses a format fails loudly.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from parser.parser_node import parser_node
+from graph_library.parser.parser_node import parser_node
 
 _SAMPLE_DIR = Path(__file__).resolve().parent.parent / "sample_logs"
 

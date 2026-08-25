@@ -1,4 +1,4 @@
-"""Unit tests for :class:`parser.json_parser.JSONLinesParser`."""
+"""Unit tests for :class:`graph_library.parser.json_parser.JSONLinesParser`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from parser.json_parser import JSONLinesParser
+from graph_library.parser.json_parser import JSONLinesParser
 
 
 @pytest.fixture

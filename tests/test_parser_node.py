@@ -1,11 +1,11 @@
-"""Unit tests for the :func:`parser.parser_node.parser_node` graph node."""
+"""Unit tests for the :func:`graph_library.parser.parser_node.parser_node` graph node."""
 
 from __future__ import annotations
 
 import json
 from datetime import datetime
 
-from parser.parser_node import parser_node
+from graph_library.parser.parser_node import parser_node
 
 EXPECTED_KEYS = {
     "parsed_logs",

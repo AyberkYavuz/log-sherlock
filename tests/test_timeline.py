@@ -1,4 +1,4 @@
-"""Unit tests for the deterministic Timeline Node (``timeline/``).
+"""Unit tests for the deterministic Timeline Node (``graph_library/timeline/``).
 
 Entries are built with :func:`_entry`, which mirrors the ``ParsedLogEntry``
 schema the parser emits, so these tests exercise the node against exactly the
@@ -27,9 +27,9 @@ from typing import Any
 import pytest
 
 from graph import compile_graph
-from models import ParsedLogEntry
-from parser.parser_node import parser_node
-from timeline import (
+from graph_library.models import ParsedLogEntry
+from graph_library.parser.parser_node import parser_node
+from graph_library.timeline import (
     COARSE_BUCKET,
     FINE_BUCKET,
     MEDIUM_BUCKET,
@@ -44,7 +44,7 @@ from timeline import (
     select_bucket_size,
     timestamped_entries,
 )
-from timeline.node import timeline_node
+from graph_library.timeline.node import timeline_node
 
 _SAMPLE_DIR = Path(__file__).resolve().parent.parent / "sample_logs"
 

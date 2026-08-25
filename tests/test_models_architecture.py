@@ -1,11 +1,12 @@
-"""Architectural guardrails for the shared ``models`` package.
+"""Architectural guardrails for the shared ``graph_library.models`` package.
 
 These tests encode the project's model-ownership rules so future refactors
 cannot silently reintroduce duplicate definitions or model drift:
 
     * every shared model has exactly ONE class definition, and it lives in
-      ``models/``,
-    * feature packages and the graph import those models from ``models`` rather
+      ``graph_library/models/``,
+    * feature packages and the graph import those models from
+      ``graph_library.models`` rather
       than redefining them,
     * the models are ``TypedDict`` s (dict-native graph state).
 """
@@ -17,12 +18,12 @@ import re
 from pathlib import Path
 
 import graph
-import models
-import parser.json_parser as json_parser
-import parser.text_parser as text_parser
-import stats.aggregations as aggregations
-import timeline.buckets as timeline_buckets
-from models import (
+from graph_library import models
+import graph_library.parser.json_parser as json_parser
+import graph_library.parser.text_parser as text_parser
+import graph_library.stats.aggregations as aggregations
+import graph_library.timeline.buckets as timeline_buckets
+from graph_library.models import (
     LogFormat,
     ParsedLogEntry,
     ParserMetrics,
@@ -30,15 +31,16 @@ from models import (
     TimelineEvent,
 )
 
-# Resolved via importlib because the ``parser`` / ``stats`` packages re-export a
+# Resolved via importlib because the ``graph_library.parser`` /
+# ``graph_library.stats`` packages re-export a
 # ``parser_node`` / ``statistics_node`` *function*, which shadows the
 # same-named submodule attribute; ``import_module`` returns the module object
 # regardless.
-parser_node_module = importlib.import_module("parser.parser_node")
-statistics_node_module = importlib.import_module("stats.statistics_node")
-timeline_node_module = importlib.import_module("timeline.node")
-error_analysis_node_module = importlib.import_module("error_analysis.node")
-error_analysis_fingerprint = importlib.import_module("error_analysis.fingerprint")
+parser_node_module = importlib.import_module("graph_library.parser.parser_node")
+statistics_node_module = importlib.import_module("graph_library.stats.statistics_node")
+timeline_node_module = importlib.import_module("graph_library.timeline.node")
+error_analysis_node_module = importlib.import_module("graph_library.error_analysis.node")
+error_analysis_fingerprint = importlib.import_module("graph_library.error_analysis.fingerprint")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -64,20 +66,20 @@ def _count_class_definitions(class_name: str) -> list[Path]:
 def test_exactly_one_parsed_log_entry_definition() -> None:
     files = _count_class_definitions("ParsedLogEntry")
     assert len(files) == 1, f"expected 1 ParsedLogEntry definition, found {files}"
-    assert files[0] == _REPO_ROOT / "models" / "parsed_log.py"
+    assert files[0] == _REPO_ROOT / "graph_library" / "models" / "parsed_log.py"
 
 
 def test_exactly_one_parser_metrics_definition() -> None:
     files = _count_class_definitions("ParserMetrics")
     assert len(files) == 1, f"expected 1 ParserMetrics definition, found {files}"
-    assert files[0] == _REPO_ROOT / "models" / "parser_metrics.py"
+    assert files[0] == _REPO_ROOT / "graph_library" / "models" / "parser_metrics.py"
 
 
 def test_exactly_one_statistics_definition() -> None:
     for name in ("Statistics", "CategoryCount", "SeveritySummary", "TimestampCoverage"):
         files = _count_class_definitions(name)
         assert len(files) == 1, f"expected 1 {name} definition, found {files}"
-        assert files[0] == _REPO_ROOT / "models" / "statistics.py"
+        assert files[0] == _REPO_ROOT / "graph_library" / "models" / "statistics.py"
 
 
 def test_exactly_one_error_analysis_definition() -> None:
@@ -90,13 +92,13 @@ def test_exactly_one_error_analysis_definition() -> None:
     ):
         files = _count_class_definitions(name)
         assert len(files) == 1, f"expected 1 {name} definition, found {files}"
-        assert files[0] == _REPO_ROOT / "models" / "error_analysis.py"
+        assert files[0] == _REPO_ROOT / "graph_library" / "models" / "error_analysis.py"
 
 
 def test_exactly_one_timeline_event_definition() -> None:
     files = _count_class_definitions("TimelineEvent")
     assert len(files) == 1, f"expected 1 TimelineEvent definition, found {files}"
-    assert files[0] == _REPO_ROOT / "models" / "timeline.py"
+    assert files[0] == _REPO_ROOT / "graph_library" / "models" / "timeline.py"
 
 
 # -- shared imports (identity, not duplication) -----------------------------
@@ -104,7 +106,7 @@ def test_exactly_one_timeline_event_definition() -> None:
 
 def test_parser_imports_shared_models() -> None:
     # The names bound inside the parser modules must be the very objects
-    # exported by ``models`` — proving import, not redefinition.
+    # exported by ``graph_library.models`` — proving import, not redefinition.
     assert json_parser.ParsedLogEntry is ParsedLogEntry
     assert text_parser.ParsedLogEntry is ParsedLogEntry
     assert parser_node_module.ParsedLogEntry is ParsedLogEntry

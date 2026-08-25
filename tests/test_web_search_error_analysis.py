@@ -1,12 +1,12 @@
-"""Tests for the optional web-search path (``web_search/`` + the two passes).
+"""Tests for the optional web-search path (``graph_library/web_search/`` + the two passes).
 
 Everything here runs offline. Two seams are stubbed and nothing else:
 
-    * ``error_analysis.node.iter_error_analysis_llms`` — a fake chat model that
+    * ``graph_library.error_analysis.node.iter_error_analysis_llms`` — a fake chat model that
       answers the decision pass and the analysis pass differently, dispatching
       on the structured-output schema it is handed, and recording every prompt
       it was given so a test can assert what the model actually saw;
-    * ``web_search.node.run_web_search`` — canned snippets, so the graph-level
+    * ``graph_library.web_search.node.run_web_search`` — canned snippets, so the graph-level
       tests exercise the real node, the real router and the real prompt
       builder without touching Tavily.
 
@@ -35,23 +35,23 @@ from typing import Any
 
 import pytest
 
-from error_analysis import (
+from graph_library.error_analysis import (
     build_analysis_prompt,
     build_error_summary,
     error_analysis_node,
 )
-from error_analysis.node import build_search_decision_prompt, decide_search_queries
+from graph_library.error_analysis.node import build_search_decision_prompt, decide_search_queries
 from graph import compile_graph, route_after_error_analysis
-from models import (
+from graph_library.models import (
     MAX_SEARCH_QUERIES,
     LLMErrorAnalysisResult,
     LLMErrorSignatureEvaluation,
     LLMSearchDecision,
 )
-from parser.parser_node import parser_node
-from web_search import MIN_RELEVANCE_SCORE, format_result, run_web_search
-from web_search.client import SNIPPET_MAX_LENGTH, build_client
-from web_search.node import web_search_node
+from graph_library.parser.parser_node import parser_node
+from graph_library.web_search import MIN_RELEVANCE_SCORE, format_result, run_web_search
+from graph_library.web_search.client import SNIPPET_MAX_LENGTH, build_client
+from graph_library.web_search.node import web_search_node
 
 # ===========================================================================
 # Log payloads
@@ -207,7 +207,7 @@ def _install_llm(
     def factory(provider: str = "openai", mode: str = "standard", **_: Any) -> Any:
         yield "fake-model", fake
 
-    monkeypatch.setattr("error_analysis.node.iter_error_analysis_llms", factory)
+    monkeypatch.setattr("graph_library.error_analysis.node.iter_error_analysis_llms", factory)
     return recorder
 
 
@@ -227,7 +227,7 @@ def _install_search(
             raise error
         return list(snippets or []), list(notes or [])
 
-    monkeypatch.setattr("web_search.node.run_web_search", fake_run)
+    monkeypatch.setattr("graph_library.web_search.node.run_web_search", fake_run)
     return calls
 
 

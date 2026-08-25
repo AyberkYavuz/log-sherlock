@@ -1,4 +1,4 @@
-"""Unit tests for the Error Analysis Node (``error_analysis/``).
+"""Unit tests for the Error Analysis Node (``graph_library/error_analysis/``).
 
 Entries are built with :func:`_entry`, which mirrors the ``ParsedLogEntry``
 schema the parser emits, so these tests exercise the node against exactly the
@@ -33,8 +33,9 @@ from typing import Any
 import httpx
 import pytest
 
-import error_analysis.llm_factory
-from error_analysis import (
+import graph_library.error_analysis.llm_factory
+from graph_library import error_analysis
+from graph_library.error_analysis import (
     ERROR_SEVERITIES,
     MAX_SIGNATURES_FOR_LLM,
     NO_ERRORS_NOTE,
@@ -59,7 +60,7 @@ from error_analysis import (
     structured_output_kwargs,
     supports_temperature,
 )
-from error_analysis.llm_factory import (
+from graph_library.error_analysis.llm_factory import (
     ANTHROPIC_MAX_TOKENS,
     MODEL_FALLBACKS,
     MODEL_TIERS,
@@ -67,8 +68,8 @@ from error_analysis.llm_factory import (
     TEMPERATURE,
     clear_model_discovery_cache,
 )
-from models import LLMErrorAnalysisResult, LLMErrorSignatureEvaluation, ParsedLogEntry
-from parser.parser_node import parser_node
+from graph_library.models import LLMErrorAnalysisResult, LLMErrorSignatureEvaluation, ParsedLogEntry
+from graph_library.parser.parser_node import parser_node
 from tests.mock_local_llm import (
     build_analysis_payload,
     build_completion_chunks,
@@ -1014,7 +1015,7 @@ def test_candidates_lead_with_the_tier_and_then_widen(
     # Discovery is stubbed out: this asserts the ordering contract, not what
     # any particular key happens to be able to reach.
     monkeypatch.setattr(
-        "error_analysis.llm_factory.discover_models", lambda *_, **__: ()
+        "graph_library.error_analysis.llm_factory.discover_models", lambda *_, **__: ()
     )
 
     candidates = resolve_model_candidates(provider, mode)
@@ -1032,7 +1033,7 @@ def test_discovered_models_rank_behind_the_verified_fallbacks(
     # lists gemini-2.5-flash and then refuses it at generateContent. So a
     # discovered id must never displace a hand-verified one.
     monkeypatch.setattr(
-        "error_analysis.llm_factory.discover_models",
+        "graph_library.error_analysis.llm_factory.discover_models",
         lambda *_, **__: ("gemini-2.5-flash", "gemini-9.9-flash"),
     )
 
@@ -1048,7 +1049,7 @@ def test_discovery_excludes_models_that_cannot_do_this_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "error_analysis.llm_factory.discover_models",
+        "graph_library.error_analysis.llm_factory.discover_models",
         lambda *_, **__: (
             "gemini-2.5-flash-preview-tts",
             "gemini-3.1-flash-image",
@@ -1137,11 +1138,11 @@ def test_iter_yields_a_client_per_candidate_lazily(
 ) -> None:
     built: list[str] = []
     monkeypatch.setattr(
-        "error_analysis.llm_factory.resolve_model_candidates",
+        "graph_library.error_analysis.llm_factory.resolve_model_candidates",
         lambda *_: ["first", "second", "third"],
     )
     monkeypatch.setattr(
-        "error_analysis.llm_factory.get_error_analysis_llm",
+        "graph_library.error_analysis.llm_factory.get_error_analysis_llm",
         lambda *_, model=None, **__: built.append(model) or object(),
     )
 
@@ -1428,7 +1429,7 @@ def _install_fake_llm(
         calls.append((provider, mode))
         yield "fake-model", fake
 
-    monkeypatch.setattr("error_analysis.node.iter_error_analysis_llms", factory)
+    monkeypatch.setattr("graph_library.error_analysis.node.iter_error_analysis_llms", factory)
     return fake, calls
 
 
@@ -1582,7 +1583,7 @@ def _install_candidate_chain(
             attempted.append(model)
             yield model, llm
 
-    monkeypatch.setattr("error_analysis.node.iter_error_analysis_llms", factory)
+    monkeypatch.setattr("graph_library.error_analysis.node.iter_error_analysis_llms", factory)
     return attempted
 
 
@@ -2066,7 +2067,7 @@ def test_node_runs_end_to_end_against_the_local_provider(
     def factory(provider: str = "openai", mode: str = "standard", **kwargs: Any) -> Any:
         return real_factory(provider, mode, http_client=local_llm_client, **kwargs)
 
-    monkeypatch.setattr("error_analysis.node.iter_error_analysis_llms", factory)
+    monkeypatch.setattr("graph_library.error_analysis.node.iter_error_analysis_llms", factory)
 
     logs = _parse_sample("typescript_pino_recovery.log")
     delta = error_analysis_node(
@@ -2117,7 +2118,7 @@ def streaming_local_llm(
             provider, mode, http_client=local_llm_client, streaming=True, **kwargs
         )
 
-    monkeypatch.setattr("error_analysis.node.iter_error_analysis_llms", factory)
+    monkeypatch.setattr("graph_library.error_analysis.node.iter_error_analysis_llms", factory)
 
 
 @pytest.mark.parametrize("method", ["json_schema", "function_calling"])
