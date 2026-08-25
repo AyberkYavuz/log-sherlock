@@ -16,6 +16,12 @@ reproducible arithmetic; everything the LLM contributes is confined to
 ``node``. That boundary is what makes the counted findings trustworthy even
 when the model is unavailable.
 
+When the caller sets ``enable_web_search`` the node gains a third, optional
+step in front of the other two — a decision call that asks whether any
+signature is obscure enough to look up. Only the decision lives here; the
+lookup itself is the separate :mod:`web_search` package, and the graph routes
+between them.
+
 Public surface:
 
     * :func:`error_analysis_node` — the graph node entry point.
@@ -67,7 +73,14 @@ from .llm_factory import (
     structured_output_kwargs,
     supports_temperature,
 )
-from .node import SYSTEM_PROMPT, build_analysis_prompt, error_analysis_node
+from .node import (
+    SEARCH_DECISION_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    build_analysis_prompt,
+    build_search_decision_prompt,
+    decide_search_queries,
+    error_analysis_node,
+)
 
 __all__ = [
     "error_analysis_node",
@@ -114,4 +127,8 @@ __all__ = [
     # node
     "build_analysis_prompt",
     "SYSTEM_PROMPT",
+    # node — optional web-search decision pass
+    "decide_search_queries",
+    "build_search_decision_prompt",
+    "SEARCH_DECISION_SYSTEM_PROMPT",
 ]
