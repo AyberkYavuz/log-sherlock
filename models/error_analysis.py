@@ -157,3 +157,44 @@ class LLMErrorAnalysisResult(BaseModel):
     evaluations: list[LLMErrorSignatureEvaluation] = Field(
         description="LLM evaluation for each provided error signature."
     )
+
+
+#: How many web-search queries the decision pass may ask for. The cap is small
+#: on purpose: each query is a network round trip on the critical path of a node
+#: that already runs in parallel with three others, and the signatures worth
+#: searching for are the rare ones. Three is enough to cover an error, its
+#: framework and its ecosystem without turning the node into a crawler.
+MAX_SEARCH_QUERIES = 3
+
+
+class LLMSearchDecision(BaseModel):
+    """The model's answer to *"is anything here obscure enough to look up?"*.
+
+    The opening move of the optional two-pass web-search path: pass 1 shows the
+    model the signature templates and nothing else, and it replies with the
+    queries worth running — or with none at all, which is the expected answer
+    for the ordinary connection refusals and null dereferences that make up
+    most log payloads.
+
+    An empty ``queries`` list is therefore a *success*, not a failure, and it is
+    the only signal the node needs: there is no separate ``needs_search`` flag
+    to contradict it.
+    """
+
+    queries: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Between 0 and "
+            f"{MAX_SEARCH_QUERIES} web-search queries that would return "
+            "documentation explaining these errors. Return an empty list when "
+            "the errors are common enough that a senior engineer would already "
+            "know the cause."
+        ),
+    )
+    reasoning: str = Field(
+        default="",
+        description=(
+            "One sentence on why these errors do or do not warrant an external "
+            "lookup."
+        ),
+    )
