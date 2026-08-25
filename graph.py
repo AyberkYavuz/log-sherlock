@@ -21,13 +21,20 @@ Topology (fixed workflow)::
     START
       -> coordinator            (deterministic)
       -> parser                 (deterministic)
-      -> [ error_analysis       (LLM, parallel)
-           pattern_analysis     (LLM, parallel)
-           statistics           (deterministic, parallel)
-           timeline ]           (deterministic, parallel)
+      -> [ error_analysis       (LLM, parallel)  <-+
+           pattern_analysis     (LLM, parallel)    | optional, opt-in
+           statistics           (deterministic)    |
+           timeline ]           (deterministic)    |
+             |                                     |
+             +-> web_search     (network) ---------+
       -> recommendation         (LLM)
       -> report_generator       (LLM)
       -> END
+
+The one deviation from "fixed" is the ``error_analysis <-> web_search`` loop,
+and it is bounded to a single lap: ``web_search`` always writes
+``search_context``, and the router only sends work its way while that field is
+``None``. Off by default — see ``enable_web_search``.
 """
 
 from __future__ import annotations
@@ -51,14 +58,16 @@ from models import (
     TimelineEvent,
 )
 
-# The error_analysis, parser, statistics and timeline nodes are implemented as
-# standalone feature packages (see ``error_analysis/``, ``parser/``, ``stats/``
-# and ``timeline/``). They are imported here and registered directly in
-# ``build_graph`` — this module defines no stub for them.
+# The error_analysis, parser, statistics, timeline and web_search nodes are
+# implemented as standalone feature packages (see ``error_analysis/``,
+# ``parser/``, ``stats/``, ``timeline/`` and ``web_search/``). They are imported
+# here and registered directly in ``build_graph`` — this module defines no stub
+# for them.
 from error_analysis import error_analysis_node
 from parser import parser_node
 from stats import statistics_node
 from timeline import timeline_node
+from web_search.node import web_search_node
 
 # ---------------------------------------------------------------------------
 # Payload type aliases
@@ -137,6 +146,13 @@ class LogSherlockState(TypedDict, total=False):
     # history — the caller owns persistence and passes context in explicitly.
     historical_context: list[HistoricalInvestigation]
 
+    # Opt in to the web-search detour described in the module docstring.
+    # Absent (the default) is ``False``: the capability trades latency, cost
+    # and determinism for coverage of unfamiliar errors, and that is the
+    # caller's trade to make, not the graph's. A ``TypedDict`` cannot carry a
+    # default, so every reader applies ``bool(state.get(...))``.
+    enable_web_search: bool
+
     # ---- WORKING ----------------------------------------------------------
     # Both fields below are written solely by the parser node (single writer),
     # so they need no reducer. ``parser_metrics`` exposes structured parser
@@ -155,6 +171,24 @@ class LogSherlockState(TypedDict, total=False):
     pattern_summary: PatternSummary   # written by pattern_analysis_node
     statistics: Statistics            # written by statistics_node
     timeline: list[TimelineEvent]     # written by timeline_node
+
+    # The two halves of the web-search handshake, each with a single writer:
+    # error_analysis asks, web_search answers. They need no reducer for the
+    # same reason as the four fields above — no two nodes write either key.
+    #
+    # ``search_context`` does double duty as the loop's state marker, and the
+    # distinction between its two falsy values is load-bearing:
+    #
+    #     None -> nobody has decided yet; error_analysis will run its decision
+    #             pass, and the router may send state to web_search;
+    #     []   -> decided, with nothing to show for it — no signature was
+    #             obscure enough, the search found nothing relevant, or it
+    #             could not run at all. The analysis proceeds unenriched and
+    #             the loop is over.
+    #
+    # Anything that writes this field must therefore write a list, never None.
+    search_queries: list[str]         # written by error_analysis_node (pass 1)
+    search_context: list[str]         # written by web_search_node
 
     # Concurrent-safe observability channels. Any node (including the four
     # parallel branches running in the same superstep) may append here, so
@@ -260,6 +294,39 @@ _PARALLEL_ANALYSIS_NODES: tuple[str, ...] = (
     "timeline",
 )
 
+# The parallel branches whose route to ``recommendation`` is a plain edge.
+# ``error_analysis`` is missing because it routes conditionally — see
+# ``route_after_error_analysis``.
+_DIRECT_TO_RECOMMENDATION: tuple[str, ...] = tuple(
+    node for node in _PARALLEL_ANALYSIS_NODES if node != "error_analysis"
+)
+
+
+def route_after_error_analysis(state: LogSherlockState) -> str:
+    """Decide whether error analysis needs a web search before it can finish.
+
+    Called after every ``error_analysis`` run, and reads the delta that run
+    just merged:
+
+        * queries asked for and nothing retrieved yet -> ``"web_search"``;
+        * anything else -> ``"recommendation"``.
+
+    The condition is what bounds the loop. ``web_search_node`` always writes
+    ``search_context`` — a list on every path, including every failure path —
+    so the second time this function sees the same state the field is no longer
+    ``None`` and the branch terminates. A search node that left the field unset
+    on failure would be routed straight back into another search.
+
+    Args:
+        state: The graph state, after the error-analysis delta is applied.
+
+    Returns:
+        The name of the next node.
+    """
+    if state.get("search_queries") and state.get("search_context") is None:
+        return "web_search"
+    return "recommendation"
+
 
 def build_graph() -> StateGraph:
     """Construct the (uncompiled) ``StateGraph`` with all nodes and edges."""
@@ -269,10 +336,18 @@ def build_graph() -> StateGraph:
     builder.add_node("coordinator", coordinator_node)
     builder.add_node("parser", parser_node)
     builder.add_node("error_analysis", error_analysis_node)
+    builder.add_node("web_search", web_search_node)
     builder.add_node("pattern_analysis", pattern_analysis_node)
     builder.add_node("statistics", statistics_node)
     builder.add_node("timeline", timeline_node)
-    builder.add_node("recommendation", recommendation_node)
+    # ``defer`` holds this node back until no other task is pending, which is
+    # what keeps the fan-in a fan-in now that one branch can take a detour.
+    # Without it the join fires as soon as the three plain edges below have
+    # been written — LangGraph treats the conditional branch out of
+    # ``error_analysis`` as a separate trigger rather than a fourth member of
+    # the join — and ``recommendation`` runs twice: once on an incomplete
+    # state, then again after the web search lands.
+    builder.add_node("recommendation", recommendation_node, defer=True)
     builder.add_node("report_generator", report_generator_node)
 
     # -- deterministic preamble --------------------------------------------
@@ -282,10 +357,22 @@ def build_graph() -> StateGraph:
     # -- fan-out / fan-in ---------------------------------------------------
     # parser -> each analysis node (fan-out into a single parallel superstep),
     # then each analysis node -> recommendation (fan-in). LangGraph will not
-    # start ``recommendation`` until *all* four incoming branches complete.
+    # start ``recommendation`` until *all* four branches complete.
     for node in _PARALLEL_ANALYSIS_NODES:
         builder.add_edge("parser", node)
+    for node in _DIRECT_TO_RECOMMENDATION:
         builder.add_edge(node, "recommendation")
+
+    # -- the optional web-search detour -------------------------------------
+    # Only ``error_analysis`` routes conditionally, and only it may loop. The
+    # path map is explicit so the two destinations show up in a rendered graph
+    # rather than being inferred at runtime.
+    builder.add_conditional_edges(
+        "error_analysis",
+        route_after_error_analysis,
+        {"web_search": "web_search", "recommendation": "recommendation"},
+    )
+    builder.add_edge("web_search", "error_analysis")
 
     # -- deterministic epilogue --------------------------------------------
     builder.add_edge("recommendation", "report_generator")
@@ -306,6 +393,7 @@ def compile_graph() -> CompiledStateGraph:
 
 __all__ = [
     "LogSherlockState",
+    "route_after_error_analysis",
     "build_graph",
     "compile_graph",
 ]
