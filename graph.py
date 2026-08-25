@@ -9,8 +9,9 @@ This module defines *only* the graph architecture for LogSherlock:
     * a ``compile_graph()`` factory.
 
 No business logic lives here: implemented nodes are built in their own feature
-packages (``parser/``, ``stats/``, ``timeline/``, ``error_analysis/``) and
-merely registered below.
+packages under ``graph_library/`` (``graph_library/parser/``,
+``graph_library/stats/``, ``graph_library/timeline/``,
+``graph_library/error_analysis/``) and merely registered below.
 Every node that is not implemented yet is a deterministic stub that documents
 its future responsibility via a ``TODO`` block and returns an empty state
 delta. Prompts, LLM calls, recommendation logic and report rendering are
@@ -45,10 +46,11 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-# Shared graph models live in the dedicated ``models`` package — the single
-# source of truth for every structure that crosses a node boundary. Feature
-# packages (parser, statistics, ...) import from here; they never redefine.
-from models import (
+# Shared graph models live in the dedicated ``graph_library.models`` package —
+# the single source of truth for every structure that crosses a node boundary.
+# Feature packages (parser, statistics, ...) import from here; they never
+# redefine.
+from graph_library.models import (
     AnalysisMode,
     ErrorSummary,
     LLMProvider,
@@ -59,15 +61,14 @@ from models import (
 )
 
 # The error_analysis, parser, statistics, timeline and web_search nodes are
-# implemented as standalone feature packages (see ``error_analysis/``,
-# ``parser/``, ``stats/``, ``timeline/`` and ``web_search/``). They are imported
-# here and registered directly in ``build_graph`` — this module defines no stub
-# for them.
-from error_analysis import error_analysis_node
-from parser import parser_node
-from stats import statistics_node
-from timeline import timeline_node
-from web_search.node import web_search_node
+# implemented as standalone feature packages under ``graph_library/``. They are
+# imported here and registered directly in ``build_graph`` — this module defines
+# no stub for them.
+from graph_library.error_analysis import error_analysis_node
+from graph_library.parser import parser_node
+from graph_library.stats import statistics_node
+from graph_library.timeline import timeline_node
+from graph_library.web_search.node import web_search_node
 
 # ---------------------------------------------------------------------------
 # Payload type aliases
