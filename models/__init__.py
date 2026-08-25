@@ -18,12 +18,14 @@ nodes are implemented, each in its own module and re-exported below.
 from __future__ import annotations
 
 from .error_analysis import (
+    MAX_SEARCH_QUERIES,
     AnalysisMode,
     ErrorSignature,
     ErrorSummary,
     LLMErrorAnalysisResult,
     LLMErrorSignatureEvaluation,
     LLMProvider,
+    LLMSearchDecision,
 )
 from .log_format import LogFormat
 from .parsed_log import ParsedLogEntry
@@ -43,6 +45,8 @@ __all__ = [
     "LLMErrorAnalysisResult",
     "LLMErrorSignatureEvaluation",
     "LLMProvider",
+    "LLMSearchDecision",
+    "MAX_SEARCH_QUERIES",
     "LogFormat",
     "ParsedLogEntry",
     "ParserMetrics",
