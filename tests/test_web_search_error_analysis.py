@@ -401,9 +401,9 @@ def test_recommendation_runs_once_whether_or_not_the_branch_loops(
     queries: list[str],
     expected_stages: int,
 ) -> None:
-    # The failure this guards against is silent and specific to the new
+    # The failure this guards against is silent and specific to the
     # conditional edge: LangGraph treats it as a trigger separate from the
-    # three plain edges, so without ``defer`` the join fires early and
+    # plain edges, so without ``defer`` the join fires early and
     # ``recommendation`` runs twice — once on a state with no error_summary.
     _install_llm(monkeypatch, queries=queries)
     _install_search(monkeypatch, snippets=[SNIPPET])
@@ -417,8 +417,8 @@ def test_recommendation_runs_once_whether_or_not_the_branch_loops(
     assert stages.count("report_generator") == 1
     assert stages.count("error_analysis") == 1
     assert stages.count("web_search") == expected_stages
-    # Every parallel branch still fans in.
-    for stage in ("error_analysis", "pattern_analysis", "statistics", "timeline"):
+    # Every analysis stage still fans in, the detour notwithstanding.
+    for stage in ("error_analysis", "statistics", "timeline", "pattern_analysis"):
         assert stage in stages
 
 
