@@ -20,23 +20,42 @@ Every node has the same signature: it accepts the full graph state and returns a
 *partial* state delta containing only the keys it owns. No node mutates state in
 place.
 
-The topology is fixed. `parser` fans out into a single parallel superstep, and
-the analysis branches fan back in:
+The topology is fixed. `parser` fans out into three parallel branches, and every
+analysis stage fans back in to `recommendation`:
 
 ```
 START
-  -> coordinator
-  -> parser
-  -> [ error_analysis   (LLM, parallel)     <-+
-       pattern_analysis (parallel)            |  optional, opt-in
-       statistics       (deterministic)       |
-       timeline ]       (deterministic)       |
-         |                                    |
-         +-> web_search  (network) -----------+
-  -> recommendation
-  -> report_generator
-  -> END
+  -> parser -----------------------------------------------------------------------+
+  -> [ error_analysis (LLM) <-> web_search (network) ] ---------------------------+|
+  -> [ statistics (deterministic), timeline (deterministic) ]                     ||
+         |                                       |                                ||
+         +---------------------------------------+-> pattern_analysis (LLM) ------++-> recommendation -> report_generator -> END
+         |                                                                        |
+         +------------------------------------------------------------------------+
 ```
+
+Three things about that shape are worth stating plainly:
+
+- **`pattern_analysis` is downstream of the deterministic pair, not parallel to
+  it.** The patterns it looks for are properties of `statistics` and `timeline`
+  output — the distributions one produces, the buckets and milestones the other
+  does — so it consumes both rather than re-reading `parsed_logs`. Two plain
+  edges into one node is a join: it runs once, after *both* have landed.
+- **`recommendation` takes a direct edge from all four analysis stages.** It
+  needs `statistics` and `timeline` in raw form as well as the patterns derived
+  from them, so those two feed it directly in addition to feeding
+  `pattern_analysis`. `error_analysis` is the exception only in mechanism: it
+  arrives via `route_after_error_analysis` rather than a plain edge, because the
+  same branch point also owns the web-search detour.
+- **`recommendation` also takes a direct edge from `parser`.** That fourth edge
+  out of `parser` carries `parser_metrics`, which reaches the synthesis no other
+  way: every analysis stage publishes its own artifact rather than forwarding
+  its inputs, so `statistics` deliberately omits parser health and `timeline`
+  reads the metrics without republishing them. The edge is what lets a
+  conclusion be *qualified* rather than merely stated — a root cause inferred
+  from a payload where a third of the lines were malformed, or where most
+  entries carried no timestamp, warrants a lower confidence score and an
+  explicit data-quality caveat in the report.
 
 The one deviation from "fixed" is the `error_analysis ↔ web_search` loop, and it
 is bounded to a single lap. `web_search` always writes `search_context` — a list
@@ -407,7 +426,7 @@ and comes back in one structured response. One call per signature was rejected
 for three reasons — root cause is a *comparative* judgement (deciding a
 payment-provider outage caused the booking failures is impossible while looking
 at either alone); per-signature calls would multiply latency and cost by the
-signature count in a node that already runs in parallel with three others; and
+signature count in a node that already runs in parallel with two others; and
 the response schema naturally carries summary-level fields that only exist for
 the batch as a whole.
 
@@ -474,7 +493,7 @@ root-cause pass.
 The node degrades rather than fails. An empty payload, an uninstalled provider
 package, a call that raises, a search that finds nothing: all produce a valid
 `ErrorSummary` with the deterministic findings intact and the reason recorded in
-`investigation_notes`, while the three sibling branches and the downstream nodes
+`investigation_notes`, while the sibling branches and the downstream nodes
 keep running. Counts, templates and timings are exactly as accurate as they were
 before the call failed — only the interpretation is missing.
 
@@ -530,7 +549,7 @@ path, so the router never sees `None` twice. A node that left the field unset on
 failure would search, fail, and be routed straight back into another search.
 
 The `recommendation` node is registered with `defer=True` for the same reason —
-without it the join fires as soon as the three plain edges have been written and
+without it the join fires as soon as the plain edges have been written and
 `recommendation` would run twice, once on an incomplete state.
 
 ### Retrieval and relevance
