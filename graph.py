@@ -20,17 +20,25 @@ intentionally left unimplemented.
 Topology (fixed workflow)::
 
     START
-      -> coordinator            (deterministic)
-      -> parser                 (deterministic)
-      -> [ error_analysis       (LLM, parallel)  <-+
-           pattern_analysis     (LLM, parallel)    | optional, opt-in
-           statistics           (deterministic)    |
-           timeline ]           (deterministic)    |
-             |                                     |
-             +-> web_search     (network) ---------+
-      -> recommendation         (LLM)
-      -> report_generator       (LLM)
-      -> END
+      -> parser -----------------------------------------------------------------------+
+      -> [ error_analysis (LLM) <-> web_search (network) ] ---------------------------+|
+      -> [ statistics (deterministic), timeline (deterministic) ]                     ||
+             |                                       |                                ||
+             +---------------------------------------+-> pattern_analysis (LLM) ------++-> recommendation -> report_generator -> END
+             |                                                                        |
+             +------------------------------------------------------------------------+
+
+``parser`` fans out into three analysis branches. ``error_analysis`` runs on its
+own (with the optional web-search detour); ``statistics`` and ``timeline`` are
+the deterministic pair, and ``pattern_analysis`` runs only once *both* have
+landed, because it reasons over their output rather than over ``parsed_logs``.
+
+``recommendation`` is the fan-in for all four analysis stages *and* for the
+parser itself: the fourth edge out of ``parser`` carries ``parser_metrics``
+straight to it, so its conclusions can be qualified by how much of the payload
+was actually readable. No analysis stage forwards those metrics — each one
+consumes what it needs and publishes its own artifact — so without the direct
+edge the fan-in would have no view of ingestion health.
 
 The one deviation from "fixed" is the ``error_analysis <-> web_search`` loop,
 and it is bounded to a single lap: ``web_search`` always writes
@@ -162,12 +170,12 @@ class LogSherlockState(TypedDict, total=False):
     parsed_logs: list[ParsedLogEntry]
     parser_metrics: ParserMetrics
 
-    # The four fan-out nodes each own exactly one of the fields below and are
-    # the *sole* writer of that field within the parallel superstep. Because
-    # there is no write contention on any single key, these fields need NO
-    # reducer — LangGraph merges disjoint keys from concurrent branches
-    # automatically. (See ``investigation_notes`` / ``completed_stages`` for
-    # the fields that genuinely require a reducer.)
+    # The four analysis nodes each own exactly one of the fields below and are
+    # the *sole* writer of that field. Because there is no write contention on
+    # any single key, these fields need NO reducer — LangGraph merges disjoint
+    # keys from concurrent branches automatically. (See
+    # ``investigation_notes`` / ``completed_stages`` for the fields that
+    # genuinely require a reducer.)
     error_summary: ErrorSummary       # written by error_analysis_node
     pattern_summary: PatternSummary   # written by pattern_analysis_node
     statistics: Statistics            # written by statistics_node
@@ -222,21 +230,13 @@ class LogSherlockState(TypedDict, total=False):
 # never mutate the incoming state in place — they return only the keys they own.
 
 
-def coordinator_node(state: LogSherlockState) -> LogSherlockState:
-    """Deterministic entrypoint that validates and normalizes the request.
-
-    TODO:
-        * Validate required INPUT fields (application_name, raw_logs, ...).
-        * Default ``analysis_mode`` to ``"standard"`` when omitted.
-        * Normalize / clamp ``investigation_timestamp``.
-        * Reject empty or oversized log payloads early with a clear error.
-        * Emit an ``investigation_notes`` entry for any recoverable input issue.
-    """
-    return {"completed_stages": ["coordinator"]}
-
-
 def pattern_analysis_node(state: LogSherlockState) -> LogSherlockState:
-    """LLM agent that detects behavioral patterns (parallel branch).
+    """LLM agent that detects behavioral patterns.
+
+    Runs downstream of ``statistics`` and ``timeline`` — not in parallel with
+    them — because the patterns it looks for are properties of their output:
+    the distributions one produces and the buckets and milestones the other
+    does.
 
     TODO:
         * Prompt an LLM to surface recurring sequences, spikes and anomalies.
@@ -250,14 +250,24 @@ def recommendation_node(state: LogSherlockState) -> LogSherlockState:
     """LLM agent that synthesizes findings into a root cause + recommendation.
 
     This is the fan-in point: it reads every WORKING artifact produced by the
-    four parallel branches and compares them against ``historical_context``.
+    four analysis stages and compares them against ``historical_context``.
+
+    It also takes a direct edge from ``parser`` in order to read
+    ``parser_metrics``, which no analysis stage forwards. Those metrics are what
+    let a conclusion be qualified rather than merely stated: a root cause
+    inferred from a payload where a third of the lines were malformed, or where
+    most entries carried no timestamp, deserves a lower ``confidence_score`` and
+    an explicit caveat in the summary.
 
     TODO:
         * Fuse error_summary, pattern_summary, statistics and timeline.
+        * Weigh the findings against ``parser_metrics`` — malformed-line and
+          missing-timestamp counts bound how much the analysis can be trusted.
         * Compare current signals against prior investigations (regressions,
           recurring issues, drift) from ``historical_context``.
-        * Infer the most likely ``root_cause`` and a ``confidence_score``.
-        * Draft the ``executive_summary``.
+        * Infer the most likely ``root_cause`` and a ``confidence_score``,
+          discounted for poor ingestion health.
+        * Draft the ``executive_summary``, surfacing any data-quality caveat.
     """
     return {
         "executive_summary": "",
@@ -286,20 +296,30 @@ def report_generator_node(state: LogSherlockState) -> LogSherlockState:
 # Graph assembly
 # ---------------------------------------------------------------------------
 
-# Nodes that fan out from the parser and fan back in to the recommendation
-# agent. Declared once so the topology stays readable and DRY.
-_PARALLEL_ANALYSIS_NODES: tuple[str, ...] = (
+# The four analysis stages, in the order they appear in the topology diagram.
+# Declared once so the topology stays readable and DRY.
+_ANALYSIS_NODES: tuple[str, ...] = (
     "error_analysis",
-    "pattern_analysis",
     "statistics",
     "timeline",
+    "pattern_analysis",
 )
 
-# The parallel branches whose route to ``recommendation`` is a plain edge.
+# The analysis branches ``parser`` fans out into. ``pattern_analysis`` is absent
+# because it consumes the deterministic pair below rather than ``parsed_logs``.
+# Not the complete set of edges out of ``parser`` — it also feeds
+# ``recommendation`` directly, which is a fan-in edge rather than a branch.
+_PARSER_FANOUT: tuple[str, ...] = ("error_analysis", "statistics", "timeline")
+
+# The deterministic nodes ``pattern_analysis`` reasons over. It runs only once
+# both have landed.
+_PATTERN_ANALYSIS_INPUTS: tuple[str, ...] = ("statistics", "timeline")
+
+# The analysis stages whose route to ``recommendation`` is a plain edge.
 # ``error_analysis`` is missing because it routes conditionally — see
 # ``route_after_error_analysis``.
 _DIRECT_TO_RECOMMENDATION: tuple[str, ...] = tuple(
-    node for node in _PARALLEL_ANALYSIS_NODES if node != "error_analysis"
+    node for node in _ANALYSIS_NODES if node != "error_analysis"
 )
 
 
@@ -334,7 +354,6 @@ def build_graph() -> StateGraph:
     builder = StateGraph(LogSherlockState)
 
     # -- register nodes -----------------------------------------------------
-    builder.add_node("coordinator", coordinator_node)
     builder.add_node("parser", parser_node)
     builder.add_node("error_analysis", error_analysis_node)
     builder.add_node("web_search", web_search_node)
@@ -342,27 +361,45 @@ def build_graph() -> StateGraph:
     builder.add_node("statistics", statistics_node)
     builder.add_node("timeline", timeline_node)
     # ``defer`` holds this node back until no other task is pending, which is
-    # what keeps the fan-in a fan-in now that one branch can take a detour.
-    # Without it the join fires as soon as the three plain edges below have
-    # been written — LangGraph treats the conditional branch out of
-    # ``error_analysis`` as a separate trigger rather than a fourth member of
-    # the join — and ``recommendation`` runs twice: once on an incomplete
-    # state, then again after the web search lands.
+    # what keeps the fan-in a fan-in now that the branches no longer finish
+    # together: one can take a web-search detour and one runs a superstep
+    # later than the pair it consumes. Without it the join fires as soon as
+    # the plain edges below have been written — LangGraph treats the
+    # conditional branch out of ``error_analysis`` as a separate trigger
+    # rather than a member of the join — and ``recommendation`` runs twice:
+    # once on an incomplete state, then again once the rest lands.
     builder.add_node("recommendation", recommendation_node, defer=True)
     builder.add_node("report_generator", report_generator_node)
 
-    # -- deterministic preamble --------------------------------------------
-    builder.add_edge(START, "coordinator")
-    builder.add_edge("coordinator", "parser")
+    # -- entry --------------------------------------------------------------
+    builder.add_edge(START, "parser")
 
-    # -- fan-out / fan-in ---------------------------------------------------
-    # parser -> each analysis node (fan-out into a single parallel superstep),
-    # then each analysis node -> recommendation (fan-in). LangGraph will not
-    # start ``recommendation`` until *all* four branches complete.
-    for node in _PARALLEL_ANALYSIS_NODES:
+    # -- fan-out ------------------------------------------------------------
+    # parser fans out into parallel branches: the error-analysis chain and the
+    # deterministic pair, all in one superstep.
+    for node in _PARSER_FANOUT:
         builder.add_edge("parser", node)
+
+    # -- the deterministic pair -> pattern_analysis -------------------------
+    # Two plain edges into one node is a join: LangGraph holds
+    # ``pattern_analysis`` until *both* ``statistics`` and ``timeline`` have
+    # written, so it always sees a complete pair rather than whichever
+    # finished first.
+    for node in _PATTERN_ANALYSIS_INPUTS:
+        builder.add_edge(node, "pattern_analysis")
+
+    # -- fan-in -------------------------------------------------------------
+    # Every analysis stage feeds ``recommendation`` directly, including the
+    # two that also feed ``pattern_analysis`` — it needs their raw artifacts,
+    # not just the patterns derived from them.
     for node in _DIRECT_TO_RECOMMENDATION:
         builder.add_edge(node, "recommendation")
+
+    # ``parser`` joins that fan-in too, because ``parser_metrics`` reaches
+    # ``recommendation`` no other way: every analysis stage publishes its own
+    # artifact rather than forwarding its inputs. The edge is what lets the
+    # synthesis qualify its confidence by how much of the payload was readable.
+    builder.add_edge("parser", "recommendation")
 
     # -- the optional web-search detour -------------------------------------
     # Only ``error_analysis`` routes conditionally, and only it may loop. The
