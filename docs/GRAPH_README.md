@@ -763,3 +763,31 @@ errors (payment declined, out of stock, invalid order, shipping delay).
   for niche errors (DeepSeek), standard domain-level business errors in large
   datasets are recognized as self-contained, bypassing search to save cost and
   latency (Test 6).
+
+---
+
+## Pattern Analysis & Multi-Provider Verification Matrix
+
+The `pattern_analysis` and `error_analysis` nodes have been manually validated using `langgraph dev` across 12 distinct test configurations spanning 4 LLM providers (OpenAI, Anthropic, DeepSeek, Gemini), 3 reasoning modes (`fast`, `standard`, `deep`), and 3 representative log datasets.
+
+### Verification Results Summary (12/12 Passed)
+
+| Test ID | Application | Provider | Mode | Target Log File | Status | Core Verification Highlights |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Test 1** | `test1` | OpenAI | `fast` | `typescript_pino_recovery.log` | PASS | Fast cascade detection (`payment` -> `hotel`) |
+| **Test 2** | `test2` | OpenAI | `standard` | `typescript_pino_recovery.log` | PASS | Structured anomaly classification (`logger_cascade`, `metadata_clustering`) |
+| **Test 3** | `test3` | OpenAI | `deep` | `java_spring_boot_large.json.log` | PASS | Clean baseline execution (7.7k logs, 0 errors, single logger) |
+| **Test 4** | `test4` | Anthropic | `fast` | `fastapi_recovery.log` | PASS | `volume_spike` onset & single-client endpoint correlation |
+| **Test 5** | `test5` | Anthropic | `standard` | `typescript_pino_recovery.log` | PASS | Step-function transient fault synthesis (503 / 409 code clustering) |
+| **Test 6** | `test6` | Anthropic | `deep` | `typescript_pino_recovery.log` | PASS | Envelope unwrapping (`_ToolArgumentEnvelope`) & deep root cause synthesis |
+| **Test 7** | `test7` | DeepSeek | `fast` | `typescript_pino_recovery.log` | PASS | Blast radius evaluation (`ERR_003` mapping to 90 downstream failures) |
+| **Test 8** | `test8` | DeepSeek | `standard` | `typescript_pino_recovery.log` | PASS | In-flight request retry tracking & scenario transition correlation |
+| **Test 9** | `test9` | DeepSeek | `deep` | `fastapi_recovery.log` | PASS | Two-bucket plateau analysis & startup signature isolation |
+| **Test 10** | `test10` | Gemini | `fast` | `fastapi_recovery.log` | PASS | Fast memory allocation failure synthesis (`sentiment-v1`) |
+| **Test 11** | `test11` | Gemini | `standard` | `typescript_pino_recovery.log` | PASS | Cross-component bottleneck & rapid recovery synthesis |
+| **Test 12** | `test12` | Gemini | `deep` | `java_spring_boot_large.json.log` | PASS | Synthetic benchmark load test recognition (7.7k logs/sec, 0 errors) |
+
+### Key Architectural Validations Confirmed by Tests:
+1. **Schema Resilience**: Tool argument unwrapping (`_ToolArgumentEnvelope`) successfully handles wrapped JSON payloads across Anthropic, DeepSeek, and Gemini structured output handlers.
+2. **Graceful Degradation**: Fallback boundaries execute cleanly under schema errors or model timeouts without crashing graph execution threads.
+3. **Multi-Mode Scaling**: `fast` mode generates concise executive summaries; `standard` and `deep` modes generate detailed JSON anomaly vectors and root-cause timelines.
