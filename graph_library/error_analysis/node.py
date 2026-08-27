@@ -55,9 +55,9 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from graph_library.models import (
     MAX_SEARCH_QUERIES,
@@ -79,6 +79,12 @@ from .llm_factory import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: The response schema of one structured call. Bound to the concrete class the
+#: caller passes so both passes keep their own return type — the analysis pass
+#: gets an :class:`~graph_library.models.LLMErrorAnalysisResult` back, the
+#: decision pass an :class:`~graph_library.models.LLMSearchDecision`.
+SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 #: The node's standing instructions. Written to fight the two failure modes a
 #: model reliably shows on log data: calling the *loudest* error the root cause
@@ -379,13 +385,22 @@ def _invoke_with_model_fallback(
     prompt: str,
     *,
     system_prompt: str = SYSTEM_PROMPT,
-    schema: type[BaseModel] = LLMErrorAnalysisResult,
-) -> tuple[Any, str, str | None]:
-    """Run a structured call, moving down the candidate chain on a dead model.
+    schema: type[SchemaT] = LLMErrorAnalysisResult,
+) -> tuple[SchemaT, str, str | None]:
+    """Run a structured call, moving down the candidate chain on a bad answer.
 
-    Only a model-identity failure is retried. An expired key, a rate limit or a
-    timeout is raised straight through — swapping the model would burn another
-    request and fail the same way.
+    Two classes of failure are retried against the next candidate, because both
+    are properties of the *model* rather than of the account calling it:
+
+        * a model-identity failure — the id is retired and answers ``404``;
+        * an unusable answer — no tool call at all, or a tool call whose
+          arguments do not validate against ``schema``. Anthropic's current
+          generation has been seen wrapping those arguments in a ``content``
+          key; :class:`~graph_library.models.LLMErrorAnalysisResult` unwraps
+          that shape itself, and anything it cannot repair lands here.
+
+    An expired key, a rate limit or a timeout is raised straight through —
+    swapping the model would burn another request and fail the same way.
 
     Both passes route through here rather than only the main one: a retired
     model id breaks the cheap decision call exactly as it breaks the expensive
@@ -402,18 +417,20 @@ def _invoke_with_model_fallback(
             the analysis pass's.
 
     Returns:
-        A ``(result, model_used, fallback_note)`` triple, never with a ``None``
-        result. ``fallback_note`` is ``None`` on the happy path and otherwise a
-        sentence for ``investigation_notes`` naming what was substituted for
-        what.
+        A ``(result, model_used, fallback_note)`` triple. ``result`` is always a
+        validated instance of ``schema`` — never ``None``, and never the plain
+        dict some provider/method combinations yield — so callers can use it
+        without re-checking its shape. ``fallback_note`` is ``None`` on the
+        happy path and otherwise a sentence for ``investigation_notes`` naming
+        what was substituted for what.
 
     Raises:
-        Exception: Whatever the *first* candidate raised, if every candidate
-            fails. The first is the one the tier actually selected, so it is
-            the failure worth reporting; the later ones are consequences of
-            this function's own retrying.
-        RuntimeError: If a candidate answered without producing the structured
-            response at all.
+        Exception: Whatever the *first* candidate failed with, if every
+            candidate fails. The first is the one the tier actually selected,
+            so it is the failure worth reporting; the later ones are
+            consequences of this function's own retrying. Callers are expected
+            to catch this and degrade — it is the node's only failure signal,
+            since nothing escapes the loop uncaught.
     """
     first_error: Exception | None = None
     requested: str | None = None
@@ -442,17 +459,36 @@ def _invoke_with_model_fallback(
             )
         except Exception as exc:  # noqa: BLE001 - classified immediately below
             first_error = first_error or exc
-            if not is_model_unavailable(exc):
-                raise
-            logger.warning(
-                "Model %s is unavailable for provider=%s (%s: %s); trying the "
-                "next candidate",
-                model,
-                provider,
-                type(exc).__name__,
-                exc,
-            )
-            continue
+            if is_model_unavailable(exc):
+                logger.warning(
+                    "Model %s is unavailable for provider=%s (%s: %s); trying "
+                    "the next candidate",
+                    model,
+                    provider,
+                    type(exc).__name__,
+                    exc,
+                )
+                continue
+            if isinstance(exc, ValueError):
+                # Every way the provider's parser reports a malformed answer is
+                # a ValueError: Pydantic's ``ValidationError`` when the tool
+                # arguments do not fit the schema, LangChain's
+                # ``OutputParserException`` when the response is not parseable
+                # at all, and a bare ``ValueError`` when the arguments are not
+                # even a dict. Matched by that shared base rather than by class
+                # so this does not need a runtime langchain import.
+                logger.warning(
+                    "Model %s answered provider=%s with a response that does "
+                    "not fit %s (%s: %s); trying the next candidate",
+                    model,
+                    provider,
+                    schema.__name__,
+                    type(exc).__name__,
+                    exc,
+                    exc_info=True,
+                )
+                continue
+            raise
 
         if result is None:
             # Only reachable where the tool call is not forced — see
@@ -461,10 +497,38 @@ def _invoke_with_model_fallback(
             # The parser yields ``None`` rather than raising when the model
             # answers in prose, which would otherwise surface downstream as a
             # bare ValidationError against ``None``.
-            raise RuntimeError(
+            missing = RuntimeError(
                 f"model {model!r} returned no structured response (the schema "
                 "was offered as a tool call and the model did not use it)"
             )
+            first_error = first_error or missing
+            logger.warning("%s; trying the next candidate", missing)
+            continue
+
+        try:
+            # ``with_structured_output`` yields a plain dict on some
+            # provider/method combinations, and the schema's own unwrapping
+            # runs here too — which is why this sits inside the loop rather
+            # than at the call site, where a ValidationError would escape past
+            # the fallback chain and take the node down with it.
+            result = (
+                result
+                if isinstance(result, schema)
+                else schema.model_validate(result)
+            )
+        except ValidationError as exc:
+            first_error = first_error or exc
+            logger.warning(
+                "Model %s answered provider=%s with a %s that does not "
+                "validate as %s (%s); trying the next candidate",
+                model,
+                provider,
+                type(result).__name__,
+                schema.__name__,
+                exc,
+                exc_info=True,
+            )
+            continue
 
         note = (
             None
@@ -528,11 +592,10 @@ def decide_search_queries(
         )
         return []
 
-    if not isinstance(decision, LLMSearchDecision):
-        # Same normalization the analysis pass needs: ``with_structured_output``
-        # yields a plain dict on some provider/method combinations.
-        decision = LLMSearchDecision.model_validate(decision)
-
+    # No shape check here: ``_invoke_with_model_fallback`` returns a validated
+    # ``LLMSearchDecision`` or raises, and this call site is *outside* the
+    # node's own try block — a ValidationError escaping to here would crash the
+    # graph thread rather than degrade it.
     queries = [query.strip() for query in decision.queries if query and query.strip()]
 
     if len(queries) > MAX_SEARCH_QUERIES:
@@ -704,14 +767,11 @@ def error_analysis_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.warning("%s", fallback_note)
         notes.append(fallback_note)
 
-    if not isinstance(result, LLMErrorAnalysisResult):
-        # ``with_structured_output`` can yield a plain dict depending on the
-        # provider and method; normalize so the merge below has one shape.
-        logger.debug(
-            "Normalizing %s response into LLMErrorAnalysisResult", type(result).__name__
-        )
-        result = LLMErrorAnalysisResult.model_validate(result)
-
+    # ``result`` is a validated LLMErrorAnalysisResult: the dict-shaped and
+    # envelope-wrapped responses are normalized inside the fallback loop, where
+    # a failure to do so is a fallback rather than an exception. Validating it
+    # here instead would put it outside the try above, which is how a wrapped
+    # Anthropic payload took the whole node down.
     logger.info(
         "LLM returned %d evaluation(s); primary_error_signature_id=%s",
         len(result.evaluations),

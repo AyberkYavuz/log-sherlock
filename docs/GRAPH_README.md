@@ -581,11 +581,24 @@ Model ids rot, and a retired id fails at the provider with a bare `404` that say
 nothing about which tier asked for it. Three layers guard against that, in
 increasing order of desperation: the tier's pinned model, a table of
 hand-verified `MODEL_FALLBACKS`, and a cached best-effort `discover_models()`
-listing of what the configured key can reach. Only a *model-identity* failure is
-retried — an expired key, a rate limit or a timeout is raised straight through,
+listing of what the configured key can reach. Two classes of failure are retried
+against the next candidate, because both are properties of the *model* rather
+than of the account calling it: a model-identity failure, and an unusable
+answer — no tool call at all, or tool arguments that do not validate against the
+schema. An expired key, a rate limit or a timeout is raised straight through,
 because swapping the model would burn another request and fail the same way. A
 substitution is always recorded in `investigation_notes`, since a silent one
 would make the report unreproducible.
+
+Structured output is a tool call underneath, and its arguments are handed to the
+schema verbatim, so a model that nests them one level deeper — `claude-opus-5`
+was observed returning `{"content": {...}}` — reads as a schema with every
+required field missing. `LLMErrorAnalysisResult` and `LLMSearchDecision` unwrap
+that envelope themselves, which repairs it inside the provider's own parser
+where the node never sees the payload; anything left unrepairable is caught in
+the fallback loop and degrades into a note rather than an exception. The
+validation deliberately happens *inside* that loop: at the call site it would
+sit outside the node's `try` and crash the graph thread.
 
 Provider quirks are pinned as data rather than discovered per run. DeepSeek needs
 both `method="function_calling"` (it rejects `response_format:

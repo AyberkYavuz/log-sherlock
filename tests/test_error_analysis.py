@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,6 +33,7 @@ from typing import Any
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 import graph_library.error_analysis.llm_factory
 from graph_library import error_analysis
@@ -45,6 +47,7 @@ from graph_library.error_analysis import (
     build_analysis_prompt,
     build_error_summary,
     collate_message,
+    decide_search_queries,
     discover_models,
     error_analysis_node,
     get_error_analysis_llm,
@@ -68,7 +71,12 @@ from graph_library.error_analysis.llm_factory import (
     TEMPERATURE,
     clear_model_discovery_cache,
 )
-from graph_library.models import LLMErrorAnalysisResult, LLMErrorSignatureEvaluation, ParsedLogEntry
+from graph_library.models import (
+    LLMErrorAnalysisResult,
+    LLMErrorSignatureEvaluation,
+    LLMSearchDecision,
+    ParsedLogEntry,
+)
 from graph_library.parser.parser_node import parser_node
 from tests.mock_local_llm import (
     build_analysis_payload,
@@ -1813,6 +1821,293 @@ def test_node_publishes_deterministic_findings_when_the_llm_fails(
         "LLM reasoning unavailable" in note and "provider unreachable" in note
         for note in delta["investigation_notes"]
     )
+
+
+# ===========================================================================
+# Malformed structured responses
+# ===========================================================================
+# Structured output is a tool call underneath, and its arguments are handed to
+# the schema verbatim. Anthropic's ``claude-opus-5`` was observed nesting those
+# arguments one level deeper, under a "content" key, which read as three
+# missing required fields and — because the payload was validated outside the
+# node's try block — took the whole graph thread down rather than degrading it.
+
+
+#: A well-formed tool-call argument payload, exactly as the parser sees it.
+_ANALYSIS_ARGS: dict[str, Any] = {
+    "primary_error_signature_id": "ERR_001",
+    "cascading_impact_summary": "The provider outage failed every booking.",
+    "evaluations": [
+        {
+            "signature_id": "ERR_001",
+            "is_root_cause_candidate": True,
+            "explanation": "root",
+        }
+    ],
+}
+
+#: The same payload as the incident produced it: wrapped one level deeper.
+_WRAPPED_ANALYSIS_ARGS: dict[str, Any] = {"content": _ANALYSIS_ARGS}
+
+
+def _validation_error() -> ValidationError:
+    """A real ValidationError, as the provider's parser raises one."""
+    with pytest.raises(ValidationError) as caught:
+        LLMErrorAnalysisResult(**{"unexpected": "shape"})
+    return caught.value
+
+
+def test_wrapped_tool_arguments_are_unwrapped_before_validation() -> None:
+    # ``LLMErrorAnalysisResult(**tool_call["args"])`` is literally what
+    # LangChain's PydanticToolsParser does, so this is the failing line from
+    # the incident.
+    result = LLMErrorAnalysisResult(**_WRAPPED_ANALYSIS_ARGS)
+
+    assert result.primary_error_signature_id == "ERR_001"
+    assert result.cascading_impact_summary.startswith("The provider outage")
+    assert [evaluation.signature_id for evaluation in result.evaluations] == ["ERR_001"]
+
+
+def test_a_wrapped_payload_validates_the_same_way_as_a_plain_one() -> None:
+    # The node's own normalization path, which takes ``model_validate`` rather
+    # than the constructor.
+    assert LLMErrorAnalysisResult.model_validate(
+        _WRAPPED_ANALYSIS_ARGS
+    ) == LLMErrorAnalysisResult.model_validate(_ANALYSIS_ARGS)
+
+
+def test_a_wrapped_search_decision_does_not_silently_lose_its_queries() -> None:
+    # The more dangerous half of the same bug: every field of this schema has a
+    # default, so an unrepaired envelope would validate cleanly under Pydantic's
+    # extra="ignore" and report that the model asked for no search at all.
+    decision = LLMSearchDecision(
+        **{"content": {"queries": ["vitess ERR_VT09027 vtgate"], "reasoning": "rare"}}
+    )
+
+    assert decision.queries == ["vitess ERR_VT09027 vtgate"]
+    assert decision.reasoning == "rare"
+
+
+def test_a_correctly_shaped_payload_is_never_unwrapped() -> None:
+    # A payload that already names the schema's fields is the answer, even when
+    # something dict-shaped is sitting alongside it.
+    result = LLMErrorAnalysisResult(
+        **{
+            **_ANALYSIS_ARGS,
+            "content": {"primary_error_signature_id": "ERR_999", "evaluations": []},
+        }
+    )
+
+    assert result.primary_error_signature_id == "ERR_001"
+
+
+def test_an_ambiguous_envelope_is_left_alone_rather_than_guessed_at() -> None:
+    # Two candidate payloads and no way to tell which is the answer: better to
+    # fail loudly here than to pick one and publish a report built on it.
+    with pytest.raises(ValidationError):
+        LLMErrorAnalysisResult(
+            **{"content": _ANALYSIS_ARGS, "input": _ANALYSIS_ARGS}
+        )
+
+
+def test_an_envelope_around_nothing_recognizable_still_fails_loudly() -> None:
+    with pytest.raises(ValidationError):
+        LLMErrorAnalysisResult(**{"content": {"unrelated": 1}})
+
+
+def test_the_unwrapping_is_reported_rather_than_silent(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="graph_library.models.error_analysis"):
+        LLMErrorAnalysisResult(**_WRAPPED_ANALYSIS_ARGS)
+
+    assert any("content" in record.message for record in caplog.records)
+
+
+def test_the_provider_parser_unwraps_a_nested_anthropic_tool_call() -> None:
+    # The repair has to hold inside the provider's own parser, where the node
+    # never sees the payload at all.
+    pytest.importorskip("langchain_core")
+    from langchain_core.messages import AIMessage
+    from langchain_core.output_parsers.openai_tools import PydanticToolsParser
+
+    parser = PydanticToolsParser(
+        tools=[LLMErrorAnalysisResult], first_tool_only=True
+    )
+    message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "LLMErrorAnalysisResult",
+                "args": _WRAPPED_ANALYSIS_ARGS,
+                "id": "toolu_01",
+            }
+        ],
+    )
+
+    result = parser.invoke(message)
+
+    assert result.primary_error_signature_id == "ERR_001"
+
+
+def test_node_accepts_a_wrapped_dict_from_structured_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_llm(monkeypatch, _WRAPPED_ANALYSIS_ARGS)
+
+    summary = error_analysis_node(
+        {"parsed_logs": [_entry(1)], "llm_provider": "anthropic", "analysis_mode": "deep"}
+    )["error_summary"]
+
+    assert summary["primary_error_signature_id"] == "ERR_001"
+    assert summary["signatures"][0]["explanation"] == "root"
+
+
+def test_node_degrades_when_a_response_never_validates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The crash the incident produced: a ValidationError must not escape the
+    # node, because nothing above it in the graph thread would catch it.
+    logs = [_entry(1, message="boom"), _entry(2, message="boom")]
+    _install_fake_llm(monkeypatch, {"unexpected": "shape"})
+
+    delta = error_analysis_node({"parsed_logs": logs, "llm_provider": "anthropic"})
+
+    assert delta["error_summary"]["signatures"][0]["count"] == 2
+    assert delta["error_summary"]["cascading_impact_summary"] == ""
+    assert delta["completed_stages"] == ["error_analysis"]
+    assert any(
+        "LLM reasoning unavailable" in note and "ValidationError" in note
+        for note in delta["investigation_notes"]
+    )
+
+
+def test_node_falls_back_when_the_parser_rejects_the_first_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # A malformed answer is a property of the model, like a retired id, so the
+    # next candidate is worth trying — with a warning, never an exception.
+    malformed = _RaisingLLM(_validation_error())
+    live = _FakeLLM(_result(evaluations=[("ERR_001", True, "root cause")]))
+    attempted = _install_candidate_chain(
+        monkeypatch, [("claude-opus-5", malformed), ("claude-sonnet-5", live)]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="graph_library.error_analysis.node"):
+        delta = error_analysis_node(
+            {
+                "parsed_logs": [_entry(1)],
+                "llm_provider": "anthropic",
+                "analysis_mode": "deep",
+            }
+        )
+
+    assert attempted == ["claude-opus-5", "claude-sonnet-5"]
+    assert delta["error_summary"]["primary_error_signature_id"] == "ERR_001"
+    assert any("claude-opus-5" in record.message for record in caplog.records)
+
+
+def test_node_falls_back_when_the_first_answer_is_the_wrong_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Same fallback, reached by the other route: the parser returned a dict
+    # rather than raising, and the dict does not fit the schema.
+    live = _FakeLLM(_result(evaluations=[("ERR_001", True, "root cause")]))
+    attempted = _install_candidate_chain(
+        monkeypatch,
+        [("claude-opus-5", _FakeLLM({"content": {"unrelated": 1}})), ("claude-sonnet-5", live)],
+    )
+
+    delta = error_analysis_node(
+        {"parsed_logs": [_entry(1)], "llm_provider": "claude", "analysis_mode": "deep"}
+    )
+
+    assert attempted == ["claude-opus-5", "claude-sonnet-5"]
+    assert delta["error_summary"]["primary_error_signature_id"] == "ERR_001"
+    assert any("unavailable" in note for note in delta["investigation_notes"])
+
+
+def test_node_still_stops_at_a_credential_failure_it_cannot_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Widening the retry to malformed answers must not widen it to everything:
+    # a rejected key fails identically against every candidate.
+    live = _FakeLLM(_result(evaluations=[]))
+    attempted = _install_candidate_chain(
+        monkeypatch,
+        [
+            ("claude-opus-5", _RaisingLLM(RuntimeError("401 authentication_error"))),
+            ("claude-sonnet-5", live),
+        ],
+    )
+
+    delta = error_analysis_node(
+        {"parsed_logs": [_entry(1)], "llm_provider": "anthropic"}
+    )
+
+    assert attempted == ["claude-opus-5"]
+    assert any("401 authentication_error" in note for note in delta["investigation_notes"])
+
+
+def test_search_decision_reads_the_queries_out_of_a_wrapped_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_llm(
+        monkeypatch, {"content": {"queries": ["hugepages allocator"], "reasoning": "x"}}
+    )
+    summary, _ = build_error_summary([_entry(1)])
+
+    queries = decide_search_queries("anthropic", "deep", summary["signatures"])
+
+    assert queries == ["hugepages allocator"]
+
+
+def test_search_decision_returns_nothing_when_the_response_cannot_be_parsed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An optional enhancement must never break an investigation: the decision
+    # pass runs outside the node's try block, so a ValidationError here would
+    # crash the thread instead of skipping the search.
+    _install_fake_llm(monkeypatch, {"unexpected": "shape"})
+    summary, _ = build_error_summary([_entry(1)])
+
+    assert decide_search_queries("anthropic", "deep", summary["signatures"]) == []
+
+
+def test_node_completes_the_two_pass_path_despite_a_wrapped_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # End to end with web search on: both passes see an envelope, and the node
+    # still returns a finished summary rather than raising.
+    class _WrappedLLM:
+        def with_structured_output(self, schema: Any, **_: Any) -> Any:
+            payload = (
+                {"content": {"queries": [], "reasoning": "all familiar"}}
+                if schema is LLMSearchDecision
+                else _WRAPPED_ANALYSIS_ARGS
+            )
+            return _FakeStructuredLLM(payload)
+
+    def factory(provider: str = "openai", mode: str = "standard", **_: Any) -> Any:
+        yield "claude-opus-5", _WrappedLLM()
+
+    monkeypatch.setattr(
+        "graph_library.error_analysis.node.iter_error_analysis_llms", factory
+    )
+
+    delta = error_analysis_node(
+        {
+            "parsed_logs": [_entry(1)],
+            "llm_provider": "anthropic",
+            "analysis_mode": "deep",
+            "enable_web_search": True,
+        }
+    )
+
+    assert delta["search_context"] == []
+    assert delta["completed_stages"] == ["error_analysis"]
+    assert delta["error_summary"]["primary_error_signature_id"] == "ERR_001"
 
 
 def test_node_skips_the_llm_entirely_when_there_are_no_errors(
