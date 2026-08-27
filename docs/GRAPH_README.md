@@ -6,6 +6,7 @@ document describes the nodes of that graph that are **fully implemented today**:
 - **Parser** — turns raw log text into normalized entries
 - **Statistics** — reports what the parsed dataset contains
 - **Timeline** — reports how the incident unfolded over time
+- **Pattern Analysis** — reads those two reports and says what about them is abnormal
 - **Error Analysis** — groups the errors and explains which one started it
 - **Web Search** — optionally fetches external documentation for obscure errors
 
@@ -357,6 +358,110 @@ Scope boundaries the node respects:
 
 When nothing in the payload can be placed on a time axis, `timeline` is `[]` and
 a single note says so verbatim.
+
+---
+
+## Pattern Analysis Node
+
+**Module:** `graph_library/pattern_analysis/node.py` · **Entry point:** `pattern_analysis_node(state)`
+
+The Pattern Analysis node answers *"how did this system behave, and what about
+that behaviour is abnormal?"* — a question neither of its inputs can answer
+alone. Statistics reports what the dataset contains and Timeline reports how it
+unfolded; neither is allowed to interpret its own output, and no node before
+this one reads both.
+
+**Reads:** `statistics`, `timeline`, `investigation_notes`, `llm_provider`,
+`analysis_mode`, `application_name`
+**Writes:** `pattern_summary`, `completed_stages`, and `investigation_notes`
+when there is something to record
+
+This is why the node sits *downstream* of the deterministic pair rather than
+beside it. It never reads `parsed_logs`: everything it reasons about is already
+aggregated, which is also what keeps a 700k-line payload inside one prompt.
+
+### What reaches the model
+
+`graph_library/pattern_analysis/prompts.py` is the adapter between two payloads
+built for different readers. It serializes both as JSON — the same choice the
+Error Analysis node makes, for the same reason: the model has to echo logger
+names and timestamps back exactly, and JSON keeps the mapping between a value
+and the thing it describes unambiguous.
+
+Three decisions shape what gets sent:
+
+- **Milestones are never dropped, buckets are.** A long incident produces
+  hundreds of buckets and at most seven milestones, and the milestones carry the
+  narrative. When the series must be trimmed to `MAX_TIMELINE_BUCKETS` (60) the
+  busiest are kept — a quiet window is the least informative thing in the
+  series — chronological order is then restored, and the omission is stated in
+  the prompt rather than hidden. A model told it has the whole series reads a
+  gap as a quiet period.
+- **Investigation notes are included.** They are where the parser and the
+  timeline record what they could *not* do. A model reading distributions with
+  no idea that a third of the payload never reached them will overstate what
+  they mean.
+- **Absent inputs are stated, not rendered empty.** `{}` reads as "the dataset
+  was empty"; the section says the report itself is missing.
+
+The system prompt is written against the two failure modes a model shows on
+aggregate log data: narrating the input back ("there were 412 errors, mostly
+from the order service") instead of identifying what is *abnormal* about it, and
+inventing a cascade between components that merely appear in the same list.
+Sequence is treated as evidence for propagation; co-occurrence is not.
+
+### Output — `PatternSummary`
+
+| Field | Meaning |
+| --- | --- |
+| `anomalies` | Individually reportable behaviours, each with a `category`, `severity`, `description`, `affected_loggers` and `time_window` |
+| `cross_logger_correlations` | Connections between failures in different components, one sentence each |
+| `metadata_insights` | The dimensions along which activity or failures concentrate |
+| `behavioral_synthesis` | A narrative of how the system's behaviour evolved |
+
+`category` is a closed vocabulary — `volume_spike`, `logger_cascade`,
+`metadata_clustering`, `baseline_shift` — because a downstream consumer has to
+filter and count these, which is impossible when the model invents a new
+category per run. `severity` is three tiers rather than a numeric score: a model
+cannot calibrate 0–100 consistently across runs, but it can tell "worth knowing"
+from "worth paging someone". An empty `anomalies` list is a valid and expected
+answer for a payload that behaved normally.
+
+### Degradation
+
+The node degrades rather than fails, and it degrades further than the other LLM
+nodes do: `graph_library/pattern_analysis/fallback.py` *derives* a pattern
+summary from the same two inputs using arithmetic only. Three of the four
+categories are decidable without judgement — the Timeline node already located
+the onset and the recovery, the peak against the series mean is a ratio, and one
+value holding most of a distribution is a share.
+
+`logger_cascade` is the exception and is reported conservatively: the fallback
+can see that component A's errors precede component B's, which is *consistent*
+with propagation, and says exactly that rather than claiming causation. It is
+held to the same line the system prompt holds the model to.
+
+Because both paths return the same `PatternAnalysisResult`, a degraded run and a
+healthy one publish an identical shape — the difference shows up in
+`investigation_notes`, never in the schema, so no downstream consumer has to ask
+which one it got. The thresholds are named constants (`SPIKE_RATIO = 2.0`, the
+same multiple the Timeline node uses for onset detection, so the two passes agree
+on what "breaking out of the baseline" means; `DOMINANCE_RATIO = 0.7`, high on
+purpose because a metadata key reaches the distribution only when it has at most
+21 distinct values, so a merely-uneven split is the normal case).
+
+When both inputs are absent the node skips the call entirely rather than
+spending a request to be told the input was empty.
+
+### Model selection
+
+The node reuses `graph_library/error_analysis/llm_factory.py` wholesale — the
+same five providers, the same three tiers, the same `(provider, mode)` routing,
+the same `MODEL_FALLBACKS` chain and the same `is_model_unavailable`
+classification. Only a model-identity failure is retried; an expired key, a rate
+limit or a timeout is raised straight through and degrades. A substitution is
+always recorded in `investigation_notes`, since a silent one would make the
+report unreproducible.
 
 ---
 
