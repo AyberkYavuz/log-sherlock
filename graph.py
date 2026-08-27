@@ -11,11 +11,12 @@ This module defines *only* the graph architecture for LogSherlock:
 No business logic lives here: implemented nodes are built in their own feature
 packages under ``graph_library/`` (``graph_library/parser/``,
 ``graph_library/stats/``, ``graph_library/timeline/``,
-``graph_library/error_analysis/``) and merely registered below.
+``graph_library/pattern_analysis/``, ``graph_library/error_analysis/``,
+``graph_library/web_search/``) and merely registered below.
 Every node that is not implemented yet is a deterministic stub that documents
 its future responsibility via a ``TODO`` block and returns an empty state
-delta. Prompts, LLM calls, recommendation logic and report rendering are
-intentionally left unimplemented.
+delta. Recommendation logic and report rendering are intentionally left
+unimplemented.
 
 Topology (fixed workflow)::
 
@@ -64,16 +65,18 @@ from graph_library.models import (
     LLMProvider,
     ParsedLogEntry,
     ParserMetrics,
+    PatternSummary,
     Statistics,
     TimelineEvent,
 )
 
-# The error_analysis, parser, statistics, timeline and web_search nodes are
-# implemented as standalone feature packages under ``graph_library/``. They are
-# imported here and registered directly in ``build_graph`` — this module defines
-# no stub for them.
+# The error_analysis, parser, pattern_analysis, statistics, timeline and
+# web_search nodes are implemented as standalone feature packages under
+# ``graph_library/``. They are imported here and registered directly in
+# ``build_graph`` — this module defines no stub for them.
 from graph_library.error_analysis import error_analysis_node
 from graph_library.parser import parser_node
+from graph_library.pattern_analysis import pattern_analysis_node
 from graph_library.stats import statistics_node
 from graph_library.timeline import timeline_node
 from graph_library.web_search.node import web_search_node
@@ -82,13 +85,12 @@ from graph_library.web_search.node import web_search_node
 # Payload type aliases
 # ---------------------------------------------------------------------------
 # Concrete models (``ParsedLogEntry``, ``ParserMetrics``, ``Statistics``,
-# ``TimelineEvent``, ``ErrorSummary``) now live in the shared ``models``
-# package. The aliases below remain deliberately loose (``dict[str, Any]``)
-# placeholders for payloads whose nodes are not yet implemented; each should
-# graduate into a ``models`` module (``PatternSummary``,
-# ``HistoricalInvestigation``, ...) as that node lands.
+# ``TimelineEvent``, ``ErrorSummary``, ``PatternSummary``) now live in the
+# shared ``models`` package. The alias below remains a deliberately loose
+# (``dict[str, Any]``) placeholder for a payload whose node is not yet
+# implemented; it should graduate into a ``models`` module as that node lands,
+# the way ``PatternSummary`` did when the pattern-analysis node was built.
 
-PatternSummary = dict[str, Any]
 HistoricalInvestigation = dict[str, Any]
 
 
@@ -228,22 +230,6 @@ class LogSherlockState(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # Every node accepts the full state and returns a *partial* state delta. Nodes
 # never mutate the incoming state in place — they return only the keys they own.
-
-
-def pattern_analysis_node(state: LogSherlockState) -> LogSherlockState:
-    """LLM agent that detects behavioral patterns.
-
-    Runs downstream of ``statistics`` and ``timeline`` — not in parallel with
-    them — because the patterns it looks for are properties of their output:
-    the distributions one produces and the buckets and milestones the other
-    does.
-
-    TODO:
-        * Prompt an LLM to surface recurring sequences, spikes and anomalies.
-        * Correlate patterns across services / loggers.
-        * Produce a ``PatternSummary`` describing notable patterns.
-    """
-    return {"pattern_summary": {}, "completed_stages": ["pattern_analysis"]}
 
 
 def recommendation_node(state: LogSherlockState) -> LogSherlockState:
