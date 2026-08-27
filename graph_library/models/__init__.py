@@ -11,9 +11,9 @@ Architectural rules:
     * This package contains no business logic and MUST NOT import any feature
       package — the dependency arrow always points *toward* models.
 
-Future shared models (``PatternSummary``, ``HistoricalInvestigation``,
-``StructuredReport``, ``ExecutionMetadata``, ...) will be added here as their
-nodes are implemented, each in its own module and re-exported below.
+Future shared models (``HistoricalInvestigation``, ``StructuredReport``,
+``ExecutionMetadata``, ...) will be added here as their nodes are implemented,
+each in its own module and re-exported below.
 """
 
 from __future__ import annotations
@@ -31,6 +31,14 @@ from .error_analysis import (
 from .log_format import LogFormat
 from .parsed_log import ParsedLogEntry
 from .parser_metrics import ParserMetrics
+from .pattern_analysis import (
+    AnomalyCategory,
+    AnomalySeverity,
+    PatternAnalysisResult,
+    PatternSummary,
+    SystemAnomaly,
+    SystemAnomalyRecord,
+)
 from .statistics import (
     CategoryCount,
     SeveritySummary,
@@ -51,6 +59,12 @@ __all__ = [
     "LogFormat",
     "ParsedLogEntry",
     "ParserMetrics",
+    "AnomalyCategory",
+    "AnomalySeverity",
+    "PatternAnalysisResult",
+    "PatternSummary",
+    "SystemAnomaly",
+    "SystemAnomalyRecord",
     "CategoryCount",
     "SeveritySummary",
     "Statistics",
