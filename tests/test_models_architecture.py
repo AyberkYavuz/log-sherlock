@@ -41,6 +41,10 @@ statistics_node_module = importlib.import_module("graph_library.stats.statistics
 timeline_node_module = importlib.import_module("graph_library.timeline.node")
 error_analysis_node_module = importlib.import_module("graph_library.error_analysis.node")
 error_analysis_fingerprint = importlib.import_module("graph_library.error_analysis.fingerprint")
+pattern_analysis_node_module = importlib.import_module("graph_library.pattern_analysis.node")
+pattern_analysis_fallback = importlib.import_module("graph_library.pattern_analysis.fallback")
+pattern_analysis_prompts = importlib.import_module("graph_library.pattern_analysis.prompts")
+schemas = importlib.import_module("graph_library.pattern_analysis.schemas")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -95,6 +99,20 @@ def test_exactly_one_error_analysis_definition() -> None:
         assert files[0] == _REPO_ROOT / "graph_library" / "models" / "error_analysis.py"
 
 
+def test_exactly_one_pattern_analysis_definition() -> None:
+    for name in (
+        "PatternSummary",
+        "SystemAnomalyRecord",
+        "PatternAnalysisResult",
+        "SystemAnomaly",
+    ):
+        files = _count_class_definitions(name)
+        assert len(files) == 1, f"expected 1 {name} definition, found {files}"
+        assert (
+            files[0] == _REPO_ROOT / "graph_library" / "models" / "pattern_analysis.py"
+        )
+
+
 def test_exactly_one_timeline_event_definition() -> None:
     files = _count_class_definitions("TimelineEvent")
     assert len(files) == 1, f"expected 1 TimelineEvent definition, found {files}"
@@ -137,11 +155,34 @@ def test_error_analysis_imports_shared_models() -> None:
     )
 
 
+def test_pattern_analysis_imports_shared_models() -> None:
+    assert pattern_analysis_node_module.PatternAnalysisResult is (
+        models.PatternAnalysisResult
+    )
+    assert pattern_analysis_fallback.PatternAnalysisResult is (
+        models.PatternAnalysisResult
+    )
+    assert pattern_analysis_fallback.SystemAnomaly is models.SystemAnomaly
+    assert pattern_analysis_fallback.Statistics is Statistics
+    assert pattern_analysis_fallback.TimelineEvent is TimelineEvent
+    assert pattern_analysis_prompts.Statistics is Statistics
+    assert pattern_analysis_prompts.TimelineEvent is TimelineEvent
+
+
+def test_pattern_analysis_schemas_module_only_re_exports() -> None:
+    # The package's ``schemas`` module is a convenience surface, not a second
+    # definition site: every name it exposes must be the very object
+    # ``graph_library.models`` exports.
+    for name in schemas.__all__:
+        assert getattr(schemas, name) is getattr(models, name), name
+
+
 def test_graph_imports_shared_models() -> None:
     assert graph.ParsedLogEntry is ParsedLogEntry
     assert graph.ParserMetrics is ParserMetrics
     assert graph.Statistics is Statistics
     assert graph.TimelineEvent is TimelineEvent
+    assert graph.PatternSummary is models.PatternSummary
 
 
 def test_models_package_exports() -> None:
@@ -157,6 +198,12 @@ def test_models_package_exports() -> None:
         "LogFormat",
         "ParsedLogEntry",
         "ParserMetrics",
+        "AnomalyCategory",
+        "AnomalySeverity",
+        "PatternAnalysisResult",
+        "PatternSummary",
+        "SystemAnomaly",
+        "SystemAnomalyRecord",
         "CategoryCount",
         "SeveritySummary",
         "Statistics",
@@ -207,6 +254,36 @@ def test_parser_metrics_is_typeddict() -> None:
         "malformed_lines",
         "missing_timestamp_lines",
     }
+
+
+def test_pattern_summary_is_typeddict() -> None:
+    assert hasattr(models.PatternSummary, "__required_keys__")
+    assert set(models.PatternSummary.__annotations__) == {
+        "anomalies",
+        "cross_logger_correlations",
+        "metadata_insights",
+        "behavioral_synthesis",
+    }
+    assert hasattr(models.SystemAnomalyRecord, "__required_keys__")
+    assert set(models.SystemAnomalyRecord.__annotations__) == {
+        "category",
+        "severity",
+        "description",
+        "affected_loggers",
+        "time_window",
+    }
+
+
+def test_pattern_summary_mirrors_the_llm_schema() -> None:
+    # The node publishes ``PatternAnalysisResult.model_dump()`` straight into
+    # the ``pattern_summary`` state field, so the two must not drift apart —
+    # the TypedDict is the *only* description of that field's shape.
+    assert set(models.PatternSummary.__annotations__) == set(
+        models.PatternAnalysisResult.model_fields
+    )
+    assert set(models.SystemAnomalyRecord.__annotations__) == set(
+        models.SystemAnomaly.model_fields
+    )
 
 
 def test_timeline_event_is_typeddict() -> None:
