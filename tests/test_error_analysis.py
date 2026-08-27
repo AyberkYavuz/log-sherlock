@@ -2120,6 +2120,32 @@ def streaming_local_llm(
 
     monkeypatch.setattr("graph_library.error_analysis.node.iter_error_analysis_llms", factory)
 
+    # The graph-level test below also runs ``pattern_analysis``, which is a
+    # second LLM node reading the same ``llm_provider: "local"`` from state.
+    # Left alone it would build a real client against the default local base
+    # URL and spend the test's time failing to connect to it. The mock answers
+    # every request with the error-analysis payload regardless of the schema it
+    # was handed, so pointing this node at it would only trade a connection
+    # error for a validation error; a local stub is what keeps the run offline.
+    def pattern_factory(*_args: Any, **_kwargs: Any) -> Any:
+        yield "mock-local-llm", _StubPatternLLM()
+
+    monkeypatch.setattr(
+        "graph_library.pattern_analysis.node.iter_error_analysis_llms", pattern_factory
+    )
+
+
+class _StubPatternLLM:
+    """Answers the pattern-analysis schema, so the graph run stays offline."""
+
+    def with_structured_output(self, schema: Any, **_: Any) -> Any:
+        return self
+
+    def invoke(self, _messages: Any) -> Any:
+        from graph_library.models import PatternAnalysisResult
+
+        return PatternAnalysisResult(behavioral_synthesis="Nothing notable.")
+
 
 @pytest.mark.parametrize("method", ["json_schema", "function_calling"])
 def test_streaming_structured_output_round_trips(
@@ -2207,8 +2233,13 @@ def test_graph_run_with_token_streaming_reaches_the_llm(
     state = asyncio.run(run())
     summary = state["error_summary"]
 
+    # Scoped to this node's note. Driving the whole graph also runs
+    # ``pattern_analysis``, which is a second LLM node with its own degradation
+    # note in the same wording; an unqualified substring match would be
+    # satisfied — or here, tripped — by a node this test says nothing about.
     assert not any(
-        "LLM reasoning unavailable" in note for note in state["investigation_notes"]
+        "Error analysis: LLM reasoning unavailable" in note
+        for note in state["investigation_notes"]
     )
     assert summary["cascading_impact_summary"] != ""
     assert summary["primary_error_signature_id"] is not None
