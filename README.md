@@ -14,7 +14,7 @@ exist in the repository today.
 
 ## Current Status
 
-The graph pipeline has expanded well beyond parsing. Five nodes are now active
+The graph pipeline has expanded well beyond parsing. Six nodes are now active
 and fully operational:
 
 - **`parser`** — deterministic ingestion. Detects the log format, parses every
@@ -27,6 +27,11 @@ and fully operational:
   buckets plus the milestones that make the shape readable: log coverage
   boundaries, first and last error, and the error onset → peak → recovery
   narrative.
+- **`pattern_analysis`** — behavioral reasoning over the two deterministic
+  reports above, which is why it runs downstream of them rather than beside
+  them. Reports volume spikes, cross-logger cascades, metadata concentrations
+  and baseline shifts. When no model is reachable it derives the same summary
+  arithmetically rather than returning nothing.
 - **`error_analysis`** — deterministic error fingerprinting followed by a single
   batched LLM pass. Collates multi-line tracebacks, masks variable tokens,
   collapses identical failures into counted signatures, and asks a model which
@@ -214,8 +219,10 @@ These files also back the web-search benchmark documented in
 Node correctness is validated through several complementary approaches:
 
 - automated unit tests for each parser, normalization helper and aggregation
-- dedicated suites for the statistics, timeline, error analysis and web search
-  nodes, including the two-pass search loop and its routing
+- dedicated suites for the statistics, timeline, pattern analysis, error
+  analysis and web search nodes, including the two-pass search loop and its
+  routing
+- a topology suite that pins the graph's exact node and edge sets
 - an architecture test that keeps shared models in the `graph_library.models` package and
   guards the dependency direction
 - regression tests that guard against quiet quality drops
