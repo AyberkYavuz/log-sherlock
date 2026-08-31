@@ -791,3 +791,105 @@ The `pattern_analysis` and `error_analysis` nodes have been manually validated u
 1. **Schema Resilience**: Tool argument unwrapping (`_ToolArgumentEnvelope`) successfully handles wrapped JSON payloads across Anthropic, DeepSeek, and Gemini structured output handlers.
 2. **Graceful Degradation**: Fallback boundaries execute cleanly under schema errors or model timeouts without crashing graph execution threads.
 3. **Multi-Mode Scaling**: `fast` mode generates concise executive summaries; `standard` and `deep` modes generate detailed JSON anomaly vectors and root-cause timelines.
+
+---
+
+## Local LLM Mock Testing
+
+Use the local mock server to test graph execution and structured outputs without
+calling external LLM APIs. `tests/mock_local_llm.py` is a minimal
+OpenAI-compatible server: it speaks the chat-completions protocol over both
+transports (plain JSON and `text/event-stream`), routes on the response schema
+each node binds, and derives its answer from the prompt it was sent rather than
+returning a canned blob. No API key, no network, no GPU.
+
+Both LLM nodes reach it in a single run. `llm_provider` is read from graph state
+by every LLM node, so one setting points `error_analysis` and `pattern_analysis`
+at the same endpoint, where they ask for different schemas —
+`LLMErrorAnalysisResult` and `LLMSearchDecision` for the first,
+`PatternAnalysisResult` for the second.
+
+### 1. Verify `.env` settings
+
+```bash
+LOCAL_LLM_BASE_URL=http://127.0.0.1:8080/v1
+LOCAL_LLM_MODEL_NAME=mock-local-llm
+LOCAL_LLM_API_KEY=cant-be-empty
+```
+
+The port in `LOCAL_LLM_BASE_URL` must match the port the server is started on in
+step 2. A mismatch fails as `openai.APIConnectionError: Connection error` from
+both LLM nodes while the mock's terminal logs nothing at all — the client is
+knocking on a closed port, so there is no request for the server to report. The
+key is a placeholder the mock ignores; it only has to be non-empty, because the
+OpenAI client refuses to send a blank one. `langgraph.json` already loads `.env`
+via `"env": ".env"`, and reads it at startup — restart `langgraph dev` after
+editing.
+
+### 2. Start the mock server (terminal 1)
+
+```bash
+python3 -m uvicorn tests.mock_local_llm:app --port 8080
+```
+
+### 3. Launch LangGraph dev (terminal 2)
+
+```bash
+langgraph dev
+```
+
+### 4. Run in the LangGraph Studio UI
+
+| Input | Value |
+| :--- | :--- |
+| `application_name` | `test1` |
+| `llm_provider` | `local` |
+| `enable_web_search` | `true` |
+| `raw_logs` | contents of `sample_logs/typescript_pino_recovery.log` |
+
+`raw_logs` is the log text itself, not a path — paste the file's contents into
+the field.
+
+### Expected results
+
+**Mock server (terminal 1)** — three `200 OK` responses, one per structured call:
+
+```
+INFO:     127.0.0.1:50677 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50677 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50677 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+```
+
+One is the error-analysis search-decision pass, one the error-analysis
+root-cause pass, one the pattern-analysis call.
+
+**Graph output** — both LLM nodes complete against their own schemas, with no
+degradation notes:
+
+- `error_summary` carries 3 signatures with `primary_error_signature_id` set and
+  every signature's `explanation` filled in;
+- `pattern_summary` carries anomalies across all four categories —
+  `volume_spike`, `baseline_shift`, `logger_cascade`, `metadata_clustering`;
+- `completed_stages` reaches `report_generator`;
+- `investigation_notes` contains no `LLM reasoning unavailable` entry. That
+  absence is the assertion that matters: both nodes degrade rather than fail, so
+  a connection error produces a complete-looking run whose interpretation is
+  silently missing, and the note is the only place it shows.
+
+**On `enable_web_search`** — the flag is honoured, but no search runs and no
+Tavily credential is needed. The mock answers the decision pass with an empty
+`queries` list, which is the expected answer for ordinary errors and is what
+keeps a local run local: a query here would be served by Tavily over the real
+network, not by this server. The router therefore reads `search_queries` as
+empty and goes straight to `recommendation`, leaving `search_context` as `[]` —
+decided, with nothing to show for it. To exercise the retrieval loop itself, use
+a real provider.
+
+**On the mock's answers** — they are derived, not canned, and deliberately
+distinguishable from the deterministic fallbacks. Error analysis nominates the
+last signature in the batch (the lowest-volume one) as the root cause; pattern
+analysis decodes the STATISTICS and TIMELINE blocks back out of the prompt and
+reports the real loggers, timestamps and metadata values it was sent, opening
+its `behavioral_synthesis` with `Mock local model:`. If a summary instead opens
+with `Deterministic summary`, the model was never reached and the node fell back
+to arithmetic.
