@@ -31,6 +31,8 @@ from typing import Literal, TypedDict
 
 from pydantic import BaseModel, Field
 
+from .base import _ToolArgumentEnvelope
+
 #: The closed vocabulary of behaviours the node may report. Closed rather than
 #: free text because a downstream consumer has to be able to filter and count
 #: these, which is impossible when the model invents a new category per run.
@@ -146,8 +148,14 @@ class SystemAnomaly(BaseModel):
     )
 
 
-class PatternAnalysisResult(BaseModel):
-    """The model's complete response for one pattern-analysis call."""
+class PatternAnalysisResult(_ToolArgumentEnvelope):
+    """The model's complete response for one pattern-analysis call.
+
+    Inherits from :class:`~graph_library.models.base._ToolArgumentEnvelope`
+    because this schema is bound as a provider tool call like every other
+    ``LLM*`` response schema, and the wrapper key some providers add would
+    otherwise cost the node its whole analysis.
+    """
 
     anomalies: list[SystemAnomaly] = Field(
         default_factory=list,

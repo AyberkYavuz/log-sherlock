@@ -26,12 +26,11 @@ contents into the TypedDicts and discards them.
 
 from __future__ import annotations
 
-import logging
-from typing import Any, Literal, TypedDict
+from typing import Literal, TypedDict
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
+from .base import _ToolArgumentEnvelope
 
 #: The chat providers the Error Analysis Node can be pointed at. ``"local"``
 #: targets any OpenAI-compatible server (vLLM, Ollama, LM Studio, or the test
@@ -126,79 +125,6 @@ class ErrorSummary(TypedDict):
 # ``with_structured_output()``. Every ``description`` below is part of the
 # prompt the provider sees — they are instructions, not comments, and should be
 # edited with that in mind.
-
-
-class _ToolArgumentEnvelope(BaseModel):
-    """Base class for a schema bound as a provider's tool-call response.
-
-    Structured output is a tool call underneath, and the arguments of that call
-    are supposed to *be* the schema. Anthropic's current generation sometimes
-    returns them nested one level deeper instead, in a single wrapper key::
-
-        {"content": {"primary_error_signature_id": ..., "evaluations": [...]}}
-
-    LangChain hands those arguments to the schema verbatim
-    (``PydanticToolsParser`` calls ``Schema(**tool_call["args"])``), so the
-    wrapper is what Pydantic sees, and every required field reads as missing::
-
-        ValidationError: 3 validation errors for LLMErrorAnalysisResult
-        primary_error_signature_id
-          Field required [type=missing, input_value={'content': {'primary_err...}}]
-
-    Unwrapping here rather than at the call site is what makes the repair
-    universal: it runs wherever the schema is validated — inside the provider's
-    own parser, where the node never sees the payload at all, as well as in the
-    node's own ``model_validate`` — and it covers every provider rather than the
-    one that was observed misbehaving.
-
-    A schema whose fields all have defaults would otherwise fail *silently*
-    rather than loudly: :class:`LLMSearchDecision` accepts
-    ``LLMSearchDecision(content={...})`` without complaint under Pydantic's
-    default ``extra="ignore"``, discards the wrapped queries and reports that
-    the model asked for no search. That is the more dangerous half of this bug,
-    and the reason both response schemas inherit from here.
-    """
-
-    @model_validator(mode="before")
-    @classmethod
-    def _unwrap_tool_arguments(cls, data: Any) -> Any:
-        """Peel a wrapper key off tool-call arguments, when there plainly is one.
-
-        Deliberately conservative — three conditions must hold together, so a
-        well-formed payload is never touched and an ambiguous one is passed
-        through to fail loudly at validation rather than being guessed at:
-
-            * no top-level key names a field of this schema (the payload is not
-              already the right shape, possibly with extras);
-            * exactly one top-level value is a dict that *does* name at least
-              one field (the wrapper key itself is not inspected, since
-              ``content`` is only the spelling seen so far);
-            * only that one candidate exists.
-        """
-        if not isinstance(data, dict) or any(key in cls.model_fields for key in data):
-            return data
-
-        wrapped = [
-            (key, value)
-            for key, value in data.items()
-            if isinstance(value, dict)
-            and any(field in cls.model_fields for field in value)
-        ]
-        if len(wrapped) != 1:
-            return data
-
-        key, payload = wrapped[0]
-        # Logged rather than silently repaired: the model deviated from the
-        # schema contract it was given, which is worth knowing about when a
-        # report reads oddly, and worth noticing if it ever becomes the norm.
-        logger.warning(
-            "%s arrived wrapped in a %r key; unwrapping the %d-key payload "
-            "inside it",
-            cls.__name__,
-            key,
-            len(payload),
-        )
-        return payload
 
 
 class LLMErrorSignatureEvaluation(BaseModel):
