@@ -893,3 +893,55 @@ reports the real loggers, timestamps and metadata values it was sent, opening
 its `behavioral_synthesis` with `Mock local model:`. If a summary instead opens
 with `Deterministic summary`, the model was never reached and the node fell back
 to arithmetic.
+
+---
+
+## Troubleshooting: LangSmith SSL / Timeout Errors on Large Logs
+
+Applies to any traced run, not only the local-mock path above. Tracing is
+configured entirely through the environment — `LANGSMITH_TRACING`,
+`LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` and `LANGSMITH_ENDPOINT` in `.env`; no
+module in `graph_library/` reads or sets them.
+
+**Symptom.** Graph execution succeeds locally — every node completes and the
+report renders — but the `langgraph dev` console reports `SSLEOFError`,
+`TimeoutError` or `ProtocolError` against
+`https://api.smith.langchain.com/runs/multipart` with a `Content-Length` above
+10 MB, and no traces appear in the LangSmith dashboard. The run itself is
+unaffected: trace upload happens on a background thread, so a failed upload
+costs observability rather than results, which is exactly why it is easy to miss.
+
+**Root cause.** `raw_logs` and `parsed_logs` both live in graph state, so the
+state snapshot attached to a run span carries the whole payload twice over — once
+as text and once as structured entries. Parsing *grows* it: each entry becomes a
+`ParsedLogEntry` with its own `metadata` dict, which is roughly 2.3x the raw
+bytes it came from. A multi-megabyte corpus file therefore pushes a single
+multipart upload past the threshold and the socket times out mid-pass.
+
+Measured, per fixture:
+
+| Fixture | Raw | Entries | `parsed_logs` | State payload |
+| :--- | ---: | ---: | ---: | ---: |
+| `java_spring_boot_large.json.log` | 3.65 MB | 7,796 | 8.44 MB | **12.09 MB** |
+| `typescript_pino_recovery.log` | 0.71 MB | 2,504 | 1.73 MB | 2.44 MB |
+| `fastapi_recovery.log` | 0.02 MB | 269 | 0.07 MB | 0.09 MB |
+
+**Solution.**
+
+1. Use a truncated or representative sample for interactive `langgraph dev` runs.
+   `sample_logs/fastapi_recovery.log` traces comfortably at 0.09 MB, and
+   `typescript_pino_recovery.log` at 2.44 MB still carries a full incident —
+   onset, cascade and recovery — which is what the reasoning nodes are being
+   exercised on. Log *volume* is not what makes a run interesting; the two
+   `java_spring_boot_large.*` fixtures are throughput benchmarks and are the only
+   ones that breach the limit.
+2. Reserve full-corpus runs for headless performance tests with tracing off:
+
+   ```bash
+   LANGSMITH_TRACING=false langgraph dev
+   ```
+
+   Use this project's variable, `LANGSMITH_TRACING` — that is what `.env` and
+   `.env.example` set. `LANGCHAIN_TRACING_V2` is the legacy alias; the LangSmith
+   SDK still honours it, but setting it here leaves `LANGSMITH_TRACING=true` in
+   place and tracing stays on.
