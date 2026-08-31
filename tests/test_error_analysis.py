@@ -2418,28 +2418,13 @@ def streaming_local_llm(
     # The graph-level test below also runs ``pattern_analysis``, which is a
     # second LLM node reading the same ``llm_provider: "local"`` from state.
     # Left alone it would build a real client against the default local base
-    # URL and spend the test's time failing to connect to it. The mock answers
-    # every request with the error-analysis payload regardless of the schema it
-    # was handed, so pointing this node at it would only trade a connection
-    # error for a validation error; a local stub is what keeps the run offline.
-    def pattern_factory(*_args: Any, **_kwargs: Any) -> Any:
-        yield "mock-local-llm", _StubPatternLLM()
-
+    # URL and spend the test's time failing to connect to it. It goes to the
+    # same mock, which routes on the schema each node binds and so answers the
+    # pattern node with a ``PatternAnalysisResult`` — the arrangement a real
+    # ``langgraph dev`` run against a local endpoint has.
     monkeypatch.setattr(
-        "graph_library.pattern_analysis.node.iter_error_analysis_llms", pattern_factory
+        "graph_library.pattern_analysis.node.iter_error_analysis_llms", factory
     )
-
-
-class _StubPatternLLM:
-    """Answers the pattern-analysis schema, so the graph run stays offline."""
-
-    def with_structured_output(self, schema: Any, **_: Any) -> Any:
-        return self
-
-    def invoke(self, _messages: Any) -> Any:
-        from graph_library.models import PatternAnalysisResult
-
-        return PatternAnalysisResult(behavioral_synthesis="Nothing notable.")
 
 
 @pytest.mark.parametrize("method", ["json_schema", "function_calling"])
@@ -2528,13 +2513,17 @@ def test_graph_run_with_token_streaming_reaches_the_llm(
     state = asyncio.run(run())
     summary = state["error_summary"]
 
-    # Scoped to this node's note. Driving the whole graph also runs
-    # ``pattern_analysis``, which is a second LLM node with its own degradation
-    # note in the same wording; an unqualified substring match would be
-    # satisfied — or here, tripped — by a node this test says nothing about.
+    # Both LLM nodes read ``llm_provider: "local"`` and both therefore reach the
+    # mock over the same endpoint, each binding its own response schema. Neither
+    # may degrade: the failure is silent — the node catches it and publishes its
+    # deterministic findings — so the note is the only place it shows.
     assert not any(
-        "Error analysis: LLM reasoning unavailable" in note
-        for note in state["investigation_notes"]
+        "LLM reasoning unavailable" in note for note in state["investigation_notes"]
     )
     assert summary["cascading_impact_summary"] != ""
     assert summary["primary_error_signature_id"] is not None
+    # The mock's pattern narrative, not the arithmetic fallback's. The two are
+    # distinguishable on purpose; see ``tests/mock_local_llm.py``.
+    assert state["pattern_summary"]["behavioral_synthesis"].startswith(
+        "Mock local model:"
+    )

@@ -7,6 +7,11 @@ told it to. Below that, the prompt builder and the deterministic fallback are
 driven directly, because both are pure functions over the two upstream payloads
 and neither needs a model to be exercised.
 
+The last section is the exception, and deliberately so: it drives the real
+``ChatOpenAI`` client against ``tests/mock_local_llm.py`` over an in-process
+transport, so the ``local`` provider — the one an operator selects in
+``langgraph dev`` — is exercised end to end rather than stubbed over.
+
 The conventions asserted here:
 
     * the prompt carries *both* deterministic reports and the notes describing
@@ -26,10 +31,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import httpx
 import pytest
 
 from graph import compile_graph
+from graph_library.error_analysis import iter_error_analysis_llms
 from graph_library.models import (
+    LLMSearchDecision,
     PatternAnalysisResult,
     PatternSummary,
     Statistics,
@@ -50,6 +58,12 @@ from graph_library.pattern_analysis import (
     pattern_analysis_node,
     prompt_payload_sizes,
     severity_for_error_share,
+)
+from tests.mock_local_llm import (
+    build_payload,
+    extract_pattern_inputs,
+    make_transport,
+    resolve_schema_name,
 )
 
 # ===========================================================================
@@ -872,3 +886,244 @@ def test_the_graph_run_degrades_when_no_model_answers(
         "Pattern analysis: LLM reasoning unavailable" in note
         for note in final["investigation_notes"]
     )
+
+
+# ===========================================================================
+# The mock local LLM server
+#
+# ``llm_provider: "local"`` is read from state by every LLM node, so selecting
+# it in ``langgraph dev`` points this node at the same OpenAI-compatible
+# endpoint the error-analysis node uses. The mock routes on the schema each
+# node binds; these tests pin that this node's schema is one of them.
+#
+# The framing of the transport itself — SSE, chunking, tool-call deltas — is
+# covered once, in ``tests/test_error_analysis.py``, and is not repeated here.
+# ===========================================================================
+
+
+#: Two named loggers and two metadata dimensions, so the mock has something to
+#: derive a cascade and a concentration from. Everything the assertions below
+#: check for must be traceable back to this payload.
+MOCK_STATISTICS: Statistics = _statistics(
+    metadata={
+        "endpoint": [("/pay", 8), ("/health", 2)],
+        "tenant": [("acme", 6), ("globex", 4)],
+    }
+)
+
+
+def _pattern_body(
+    statistics: Statistics | None,
+    timeline: list[TimelineEvent] | None,
+    notes: list[str] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """A chat-completions request as the node would send it for these inputs."""
+    return {
+        "model": "mock-local-llm",
+        "messages": [
+            {"role": "system", "content": "instructions"},
+            {
+                "role": "user",
+                "content": build_pattern_analysis_prompt(statistics, timeline, notes),
+            },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "PatternAnalysisResult", "schema": {}},
+        },
+        **extra,
+    }
+
+
+def test_the_mock_routes_each_node_to_its_own_schema() -> None:
+    # The failure this guards against is silent rather than loud: every field of
+    # ``LLMSearchDecision`` has a default, so it accepts a foreign payload,
+    # drops it, and reports that no search was wanted.
+    assert resolve_schema_name(_pattern_body(MOCK_STATISTICS, INCIDENT_TIMELINE)) == (
+        "PatternAnalysisResult"
+    )
+    assert resolve_schema_name(
+        {"messages": [], "tools": [{"function": {"name": "LLMErrorAnalysisResult"}}]}
+    ) == "LLMErrorAnalysisResult"
+    assert resolve_schema_name(
+        {"messages": [], "tools": [{"function": {"name": "LLMSearchDecision"}}]}
+    ) == "LLMSearchDecision"
+
+
+def test_the_mock_routes_on_the_schema_fields_when_the_name_is_not_one_it_knows() -> None:
+    # A schema bound under another name is still recognizable by its own
+    # properties, which is the difference between answering it and defaulting to
+    # the error-analysis payload.
+    body = _pattern_body(MOCK_STATISTICS, INCIDENT_TIMELINE)
+    body["response_format"]["json_schema"] = {
+        "name": "Extract",
+        "schema": {"properties": {"anomalies": {}, "behavioral_synthesis": {}}},
+    }
+    assert resolve_schema_name(body) == "PatternAnalysisResult"
+
+
+def test_the_mock_falls_back_to_the_prompt_when_no_schema_is_declared() -> None:
+    # ``method="json_mode"`` puts neither a name nor a schema on the wire,
+    # leaving the mock in the position a real model is in: only the prompt.
+    body = _pattern_body(MOCK_STATISTICS, INCIDENT_TIMELINE)
+    body["response_format"] = {"type": "json_object"}
+    assert resolve_schema_name(body) == "PatternAnalysisResult"
+
+
+def test_the_mock_reads_both_reports_back_out_of_the_prompt() -> None:
+    statistics, timeline = extract_pattern_inputs(
+        _pattern_body(MOCK_STATISTICS, INCIDENT_TIMELINE)["messages"]
+    )
+
+    # Byte-for-byte the payloads the prompt builder rendered, which is what lets
+    # the derived answer be checked against the input the node actually sent.
+    assert statistics["logger_distribution"] == MOCK_STATISTICS["logger_distribution"]
+    assert statistics["metadata_distributions"] == MOCK_STATISTICS["metadata_distributions"]
+    assert len(timeline) == len(INCIDENT_TIMELINE)
+    assert [event["event_type"] for event in timeline] == [
+        event["event_type"] for event in INCIDENT_TIMELINE
+    ]
+
+
+def test_the_mock_reads_a_trimmed_series_past_the_omission_note() -> None:
+    # A long series puts a parenthesised note between the heading and the JSON.
+    # A reader that stopped at the first non-JSON line would silently lose every
+    # bucket in exactly the runs that have the most of them.
+    buckets = [
+        _bucket(f"2026-01-01T{hour:02d}:00:00", errors=hour)
+        for hour in range(MAX_TIMELINE_BUCKETS + 10)
+    ]
+    prompt = build_pattern_analysis_prompt(MOCK_STATISTICS, buckets)
+    assert "were omitted to fit" in prompt
+
+    _statistics, timeline = extract_pattern_inputs(
+        [{"role": "user", "content": prompt}]
+    )
+    assert len(timeline) == MAX_TIMELINE_BUCKETS
+
+
+def test_the_mock_reads_nothing_out_of_an_unavailable_section() -> None:
+    # Both sections are rendered as prose when they are empty. A reader that
+    # scanned forward for the next bracket would hand the statistics section the
+    # timeline's payload.
+    statistics, timeline = extract_pattern_inputs(
+        _pattern_body(None, INCIDENT_TIMELINE)["messages"]
+    )
+    assert statistics == {}
+    assert len(timeline) == len(INCIDENT_TIMELINE)
+
+
+def test_the_mock_payload_conforms_to_the_structured_output_schema() -> None:
+    result = PatternAnalysisResult.model_validate(
+        build_payload(_pattern_body(MOCK_STATISTICS, INCIDENT_TIMELINE))
+    )
+
+    categories = {anomaly.category for anomaly in result.anomalies}
+    assert "volume_spike" in categories
+    assert "metadata_clustering" in categories
+    assert result.behavioral_synthesis
+
+
+def test_the_mock_payload_names_only_loggers_and_timestamps_from_the_prompt() -> None:
+    # The point of deriving rather than canning: a mock that invented logger
+    # names would satisfy every assertion about shape while proving nothing
+    # about what the node sent.
+    result = PatternAnalysisResult.model_validate(
+        build_payload(_pattern_body(MOCK_STATISTICS, INCIDENT_TIMELINE))
+    )
+
+    known_loggers = {
+        row["value"] for row in MOCK_STATISTICS["logger_distribution"] if row["value"]
+    }
+    known_windows = {event["timestamp"] for event in INCIDENT_TIMELINE}
+
+    for anomaly in result.anomalies:
+        assert set(anomaly.affected_loggers) <= known_loggers
+        assert anomaly.time_window is None or anomaly.time_window in known_windows
+
+
+def test_the_mock_answer_is_distinguishable_from_the_deterministic_fallback() -> None:
+    # The two paths must not converge. If the mock reproduced the fallback, a
+    # test asserting "the model answered" would pass just as happily on a run
+    # where nothing answered at all.
+    mocked = PatternAnalysisResult.model_validate(
+        build_payload(_pattern_body(MOCK_STATISTICS, INCIDENT_TIMELINE))
+    )
+    fallback = build_fallback_summary(MOCK_STATISTICS, INCIDENT_TIMELINE)
+
+    assert mocked.behavioral_synthesis != fallback.behavioral_synthesis
+
+
+def test_the_mock_answers_an_empty_pattern_prompt_without_inventing_anything() -> None:
+    result = PatternAnalysisResult.model_validate(
+        build_payload(_pattern_body(None, None))
+    )
+
+    assert result.anomalies == []
+    assert result.cross_logger_correlations == []
+    # ``behavioral_synthesis`` has no default, so an empty string here is a
+    # validation error rather than a thin answer.
+    assert result.behavioral_synthesis
+
+
+def test_the_mock_declines_the_search_lookup_with_a_stated_reason() -> None:
+    # An empty ``queries`` list is the expected answer, and it is what keeps a
+    # local run local: a query is served by Tavily over the real network, not by
+    # this server. What changed is that it is now a decision rather than a
+    # dropped payload — the reasoning reaches the node's log line.
+    decision = LLMSearchDecision.model_validate(
+        build_payload(
+            {
+                "messages": [{"role": "user", "content": '"signature_id": "ERR_001"'}],
+                "tools": [{"function": {"name": "LLMSearchDecision"}}],
+            }
+        )
+    )
+
+    assert decision.queries == []
+    assert decision.reasoning
+
+
+def test_the_node_runs_end_to_end_against_the_local_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The real path — factory, ChatOpenAI, HTTP, structured-output parsing —
+    # with no network and no API key. Streaming is forced on because that is
+    # what LangGraph Studio does to every chat model in a run.
+    monkeypatch.setenv("LOCAL_LLM_BASE_URL", "http://mock/v1")
+    monkeypatch.setenv("LOCAL_LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LOCAL_LLM_MODEL_NAME", "mock-local-llm")
+    client = httpx.Client(transport=make_transport(), base_url="http://mock")
+
+    def factory(provider: str = "openai", mode: str = "standard", **kwargs: Any) -> Any:
+        return iter_error_analysis_llms(
+            provider, mode, http_client=client, streaming=True, **kwargs
+        )
+
+    monkeypatch.setattr(
+        "graph_library.pattern_analysis.node.iter_error_analysis_llms", factory
+    )
+
+    delta = pattern_analysis_node(
+        {
+            "statistics": MOCK_STATISTICS,
+            "timeline": INCIDENT_TIMELINE,
+            "llm_provider": "local",
+            "analysis_mode": "fast",
+            "application_name": "checkout",
+        }
+    )
+    summary = delta["pattern_summary"]
+
+    # The degradation is silent — the node catches it and publishes the
+    # arithmetic summary — so the absent note is the assertion that matters.
+    assert "investigation_notes" not in delta
+    assert set(summary) == set(PatternSummary.__annotations__)
+    assert summary["behavioral_synthesis"] != (
+        build_fallback_summary(MOCK_STATISTICS, INCIDENT_TIMELINE).behavioral_synthesis
+    )
+    assert {anomaly["category"] for anomaly in summary["anomalies"]} >= {
+        "volume_spike",
+        "metadata_clustering",
+    }
