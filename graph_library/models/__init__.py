@@ -11,9 +11,12 @@ Architectural rules:
     * This package contains no business logic and MUST NOT import any feature
       package — the dependency arrow always points *toward* models.
 
-Future shared models (``HistoricalInvestigation``, ``StructuredReport``,
-``ExecutionMetadata``, ...) will be added here as their nodes are implemented,
-each in its own module and re-exported below.
+Future shared models (``HistoricalInvestigation``, ``ExecutionMetadata``, ...)
+will be added here as their nodes are implemented, each in its own module and
+re-exported below — the way
+:class:`~graph_library.models.prepare_output.StructuredInvestigationReport` did
+when the prepare-output node landed and its placeholder in ``graph.py`` was
+replaced.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ from .pattern_analysis import (
     SystemAnomaly,
     SystemAnomalyRecord,
 )
+from .prepare_output import StructuredInvestigationReport
 from .statistics import (
     CategoryCount,
     SeveritySummary,
@@ -65,6 +69,7 @@ __all__ = [
     "PatternSummary",
     "SystemAnomaly",
     "SystemAnomalyRecord",
+    "StructuredInvestigationReport",
     "CategoryCount",
     "SeveritySummary",
     "Statistics",
