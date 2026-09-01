@@ -14,7 +14,7 @@ exist in the repository today.
 
 ## Current Status
 
-The graph pipeline has expanded well beyond parsing. Six nodes are now active
+The graph pipeline has expanded well beyond parsing. Seven nodes are now active
 and fully operational:
 
 - **`parser`** — deterministic ingestion. Detects the log format, parses every
@@ -40,13 +40,18 @@ and fully operational:
 - **`web_search`** — the optional, opt-in detour between the two error-analysis
   passes. Retrieves external documentation from Tavily for error signatures a
   model cannot be expected to recognise, behind a relevance floor.
+- **`prepare_output`** — the fan-in synthesis gate. Scores the evidence
+  deterministically from parser health and the error analysis, asks one model for
+  the root cause and the executive summary, and packages every upstream artifact
+  into the `structured_report` a UI hydrates from and the database stores.
 
 Full per-node documentation — state contracts, algorithms, guarantees, provider
 handling and the web-search benchmark — lives in
 [`docs/GRAPH_README.md`](docs/GRAPH_README.md).
 
-The remaining nodes in the topology are still deterministic stubs, and this
-documentation will grow together with the implementation.
+`write_to_db` is the one remaining node in the topology and is still a
+deterministic stub, so nothing is persisted yet; this documentation will grow
+together with the implementation.
 
 ---
 
@@ -153,8 +158,8 @@ malformed inputs. These files are used for:
 - regression testing
 - manual testing in LangGraph Studio
 - adding support for new ecosystems
-- end-to-end exercising of the statistics, timeline, error analysis and web
-  search nodes
+- end-to-end exercising of the statistics, timeline, error analysis, web search
+  and prepare output nodes
 
 ### Small fixtures
 
@@ -220,8 +225,8 @@ Node correctness is validated through several complementary approaches:
 
 - automated unit tests for each parser, normalization helper and aggregation
 - dedicated suites for the statistics, timeline, pattern analysis, error
-  analysis and web search nodes, including the two-pass search loop and its
-  routing
+  analysis, web search and prepare output nodes, including the two-pass search
+  loop and its routing, and the confidence-scoring engine penalty by penalty
 - a topology suite that pins the graph's exact node and edge sets
 - an architecture test that keeps shared models in the `graph_library.models` package and
   guards the dependency direction
