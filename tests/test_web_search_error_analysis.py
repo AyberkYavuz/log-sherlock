@@ -23,7 +23,7 @@ The conventions asserted here:
     * the loop runs at most one lap, guaranteed by ``search_context`` always
       being written as a list — the failure paths are what prove this, since
       they are the ones tempted to leave it unset;
-    * fanning back in still works: ``recommendation`` runs exactly once whether
+    * fanning back in still works: ``prepare_output`` runs exactly once whether
       or not the error-analysis branch took the detour.
 """
 
@@ -395,7 +395,7 @@ def test_niche_error_triggers_search(monkeypatch: pytest.MonkeyPatch) -> None:
     ],
     ids=["without-detour", "with-detour"],
 )
-def test_recommendation_runs_once_whether_or_not_the_branch_loops(
+def test_prepare_output_runs_once_whether_or_not_the_branch_loops(
     monkeypatch: pytest.MonkeyPatch,
     raw_logs: str,
     queries: list[str],
@@ -404,7 +404,7 @@ def test_recommendation_runs_once_whether_or_not_the_branch_loops(
     # The failure this guards against is silent and specific to the
     # conditional edge: LangGraph treats it as a trigger separate from the
     # plain edges, so without ``defer`` the join fires early and
-    # ``recommendation`` runs twice — once on a state with no error_summary.
+    # ``prepare_output`` runs twice — once on a state with no error_summary.
     _install_llm(monkeypatch, queries=queries)
     _install_search(monkeypatch, snippets=[SNIPPET])
 
@@ -413,8 +413,8 @@ def test_recommendation_runs_once_whether_or_not_the_branch_loops(
     )
     stages = final["completed_stages"]
 
-    assert stages.count("recommendation") == 1
-    assert stages.count("report_generator") == 1
+    assert stages.count("prepare_output") == 1
+    assert stages.count("write_to_db") == 1
     assert stages.count("error_analysis") == 1
     assert stages.count("web_search") == expected_stages
     # Every analysis stage still fans in, the detour notwithstanding.
@@ -452,7 +452,7 @@ def test_a_failed_search_still_completes_the_investigation(
 
     assert final["search_context"] == []
     assert final["error_summary"]["primary_error_signature_id"] == "ERR_001"
-    assert final["completed_stages"].count("recommendation") == 1
+    assert final["completed_stages"].count("prepare_output") == 1
     assert any(
         "Web search: unavailable" in note for note in final["investigation_notes"]
     )
@@ -466,11 +466,11 @@ def test_a_failed_search_still_completes_the_investigation(
 @pytest.mark.parametrize(
     ("state", "expected"),
     [
-        ({}, "recommendation"),
-        ({"search_queries": [], "search_context": None}, "recommendation"),
+        ({}, "prepare_output"),
+        ({"search_queries": [], "search_context": None}, "prepare_output"),
         ({"search_queries": ["q"], "search_context": None}, "web_search"),
-        ({"search_queries": ["q"], "search_context": []}, "recommendation"),
-        ({"search_queries": ["q"], "search_context": ["snippet"]}, "recommendation"),
+        ({"search_queries": ["q"], "search_context": []}, "prepare_output"),
+        ({"search_queries": ["q"], "search_context": ["snippet"]}, "prepare_output"),
     ],
     ids=["empty", "no-queries", "asked", "answered-empty", "answered"],
 )

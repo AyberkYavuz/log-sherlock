@@ -15,7 +15,7 @@ packages under ``graph_library/`` (``graph_library/parser/``,
 ``graph_library/web_search/``) and merely registered below.
 Every node that is not implemented yet is a deterministic stub that documents
 its future responsibility via a ``TODO`` block and returns an empty state
-delta. Recommendation logic and report rendering are intentionally left
+delta. The ``prepare_output`` and ``write_to_db`` stages are intentionally left
 unimplemented.
 
 Topology (fixed workflow)::
@@ -25,7 +25,7 @@ Topology (fixed workflow)::
       -> [ error_analysis (LLM) <-> web_search (network) ] ---------------------------+|
       -> [ statistics (deterministic), timeline (deterministic) ]                     ||
              |                                       |                                ||
-             +---------------------------------------+-> pattern_analysis (LLM) ------++-> recommendation -> report_generator -> END
+             +---------------------------------------+-> pattern_analysis (LLM) ------++-> prepare_output -> write_to_db -> END
              |                                                                        |
              +------------------------------------------------------------------------+
 
@@ -34,7 +34,7 @@ own (with the optional web-search detour); ``statistics`` and ``timeline`` are
 the deterministic pair, and ``pattern_analysis`` runs only once *both* have
 landed, because it reasons over their output rather than over ``parsed_logs``.
 
-``recommendation`` is the fan-in for all four analysis stages *and* for the
+``prepare_output`` is the fan-in for all four analysis stages *and* for the
 parser itself: the fourth edge out of ``parser`` carries ``parser_metrics``
 straight to it, so its conclusions can be qualified by how much of the payload
 was actually readable. No analysis stage forwards those metrics — each one
@@ -232,7 +232,7 @@ class LogSherlockState(TypedDict, total=False):
 # never mutate the incoming state in place — they return only the keys they own.
 
 
-def recommendation_node(state: LogSherlockState) -> LogSherlockState:
+def prepare_output_node(state: LogSherlockState) -> LogSherlockState:
     """LLM agent that synthesizes findings into a root cause + recommendation.
 
     This is the fan-in point: it reads every WORKING artifact produced by the
@@ -259,11 +259,11 @@ def recommendation_node(state: LogSherlockState) -> LogSherlockState:
         "executive_summary": "",
         "root_cause": "",
         "confidence_score": 0,
-        "completed_stages": ["recommendation"],
+        "completed_stages": ["prepare_output"],
     }
 
 
-def report_generator_node(state: LogSherlockState) -> LogSherlockState:
+def write_to_db_node(state: LogSherlockState) -> LogSherlockState:
     """LLM node that renders the final human- and machine-readable reports.
 
     TODO:
@@ -274,7 +274,7 @@ def report_generator_node(state: LogSherlockState) -> LogSherlockState:
     return {
         "markdown_report": "",
         "structured_report": {},
-        "completed_stages": ["report_generator"],
+        "completed_stages": ["write_to_db"],
     }
 
 
@@ -294,17 +294,17 @@ _ANALYSIS_NODES: tuple[str, ...] = (
 # The analysis branches ``parser`` fans out into. ``pattern_analysis`` is absent
 # because it consumes the deterministic pair below rather than ``parsed_logs``.
 # Not the complete set of edges out of ``parser`` — it also feeds
-# ``recommendation`` directly, which is a fan-in edge rather than a branch.
+# ``prepare_output`` directly, which is a fan-in edge rather than a branch.
 _PARSER_FANOUT: tuple[str, ...] = ("error_analysis", "statistics", "timeline")
 
 # The deterministic nodes ``pattern_analysis`` reasons over. It runs only once
 # both have landed.
 _PATTERN_ANALYSIS_INPUTS: tuple[str, ...] = ("statistics", "timeline")
 
-# The analysis stages whose route to ``recommendation`` is a plain edge.
+# The analysis stages whose route to ``prepare_output`` is a plain edge.
 # ``error_analysis`` is missing because it routes conditionally — see
 # ``route_after_error_analysis``.
-_DIRECT_TO_RECOMMENDATION: tuple[str, ...] = tuple(
+_DIRECT_TO_PREPARE_OUTPUT: tuple[str, ...] = tuple(
     node for node in _ANALYSIS_NODES if node != "error_analysis"
 )
 
@@ -316,7 +316,7 @@ def route_after_error_analysis(state: LogSherlockState) -> str:
     just merged:
 
         * queries asked for and nothing retrieved yet -> ``"web_search"``;
-        * anything else -> ``"recommendation"``.
+        * anything else -> ``"prepare_output"``.
 
     The condition is what bounds the loop. ``web_search_node`` always writes
     ``search_context`` — a list on every path, including every failure path —
@@ -332,7 +332,7 @@ def route_after_error_analysis(state: LogSherlockState) -> str:
     """
     if state.get("search_queries") and state.get("search_context") is None:
         return "web_search"
-    return "recommendation"
+    return "prepare_output"
 
 
 def build_graph() -> StateGraph:
@@ -352,10 +352,10 @@ def build_graph() -> StateGraph:
     # later than the pair it consumes. Without it the join fires as soon as
     # the plain edges below have been written — LangGraph treats the
     # conditional branch out of ``error_analysis`` as a separate trigger
-    # rather than a member of the join — and ``recommendation`` runs twice:
+    # rather than a member of the join — and ``prepare_output`` runs twice:
     # once on an incomplete state, then again once the rest lands.
-    builder.add_node("recommendation", recommendation_node, defer=True)
-    builder.add_node("report_generator", report_generator_node)
+    builder.add_node("prepare_output", prepare_output_node, defer=True)
+    builder.add_node("write_to_db", write_to_db_node)
 
     # -- entry --------------------------------------------------------------
     builder.add_edge(START, "parser")
@@ -375,17 +375,17 @@ def build_graph() -> StateGraph:
         builder.add_edge(node, "pattern_analysis")
 
     # -- fan-in -------------------------------------------------------------
-    # Every analysis stage feeds ``recommendation`` directly, including the
+    # Every analysis stage feeds ``prepare_output`` directly, including the
     # two that also feed ``pattern_analysis`` — it needs their raw artifacts,
     # not just the patterns derived from them.
-    for node in _DIRECT_TO_RECOMMENDATION:
-        builder.add_edge(node, "recommendation")
+    for node in _DIRECT_TO_PREPARE_OUTPUT:
+        builder.add_edge(node, "prepare_output")
 
     # ``parser`` joins that fan-in too, because ``parser_metrics`` reaches
-    # ``recommendation`` no other way: every analysis stage publishes its own
+    # ``prepare_output`` no other way: every analysis stage publishes its own
     # artifact rather than forwarding its inputs. The edge is what lets the
     # synthesis qualify its confidence by how much of the payload was readable.
-    builder.add_edge("parser", "recommendation")
+    builder.add_edge("parser", "prepare_output")
 
     # -- the optional web-search detour -------------------------------------
     # Only ``error_analysis`` routes conditionally, and only it may loop. The
@@ -394,13 +394,13 @@ def build_graph() -> StateGraph:
     builder.add_conditional_edges(
         "error_analysis",
         route_after_error_analysis,
-        {"web_search": "web_search", "recommendation": "recommendation"},
+        {"web_search": "web_search", "prepare_output": "prepare_output"},
     )
     builder.add_edge("web_search", "error_analysis")
 
     # -- deterministic epilogue --------------------------------------------
-    builder.add_edge("recommendation", "report_generator")
-    builder.add_edge("report_generator", END)
+    builder.add_edge("prepare_output", "write_to_db")
+    builder.add_edge("write_to_db", END)
 
     return builder
 

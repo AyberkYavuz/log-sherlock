@@ -87,7 +87,7 @@ class PatternSummary(TypedDict):
     """Behavioral patterns observed across the statistics and the timeline.
 
     The payload of the ``pattern_summary`` state field, and the shape the
-    recommendation node consumes.
+    prepare_output node consumes.
 
     Attributes:
         anomalies: Individually reportable behaviours, each a

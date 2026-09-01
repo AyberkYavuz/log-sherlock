@@ -23,7 +23,7 @@ Scope boundaries it deliberately respects:
     * **Dataset composition** (level / logger distributions, coverage ratios)
       belongs to the statistics node and is not mirrored here.
     * **Interpretation** — what the shape *means* — belongs to the LLM analysis
-      and recommendation nodes. Every string this node emits is a mechanical
+      and prepare_output nodes. Every string this node emits is a mechanical
       restatement of a count it computed.
 
 The public entry point is :func:`timeline_node`, whose signature matches the

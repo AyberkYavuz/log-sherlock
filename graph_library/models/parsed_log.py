@@ -2,7 +2,7 @@
 
 ``ParsedLogEntry`` is the single source of truth for a parsed log line. The
 parser produces it directly (there is no separate "internal" representation),
-and every downstream node — statistics, timeline, recommendation, report —
+and every downstream node — statistics, timeline, prepare_output, write_to_db —
 consumes exactly this shape.
 
 It is a :class:`~typing.TypedDict` rather than a dataclass so that a parsed

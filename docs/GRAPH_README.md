@@ -22,7 +22,7 @@ Every node has the same signature: it accepts the full graph state and returns a
 place.
 
 The topology is fixed. `parser` fans out into three parallel branches, and every
-analysis stage fans back in to `recommendation`:
+analysis stage fans back in to `prepare_output`:
 
 ```
 START
@@ -30,7 +30,7 @@ START
   -> [ error_analysis (LLM) <-> web_search (network) ] ---------------------------+|
   -> [ statistics (deterministic), timeline (deterministic) ]                     ||
          |                                       |                                ||
-         +---------------------------------------+-> pattern_analysis (LLM) ------++-> recommendation -> report_generator -> END
+         +---------------------------------------+-> pattern_analysis (LLM) ------++-> prepare_output -> write_to_db -> END
          |                                                                        |
          +------------------------------------------------------------------------+
 ```
@@ -42,13 +42,13 @@ Three things about that shape are worth stating plainly:
   output — the distributions one produces, the buckets and milestones the other
   does — so it consumes both rather than re-reading `parsed_logs`. Two plain
   edges into one node is a join: it runs once, after *both* have landed.
-- **`recommendation` takes a direct edge from all four analysis stages.** It
+- **`prepare_output` takes a direct edge from all four analysis stages.** It
   needs `statistics` and `timeline` in raw form as well as the patterns derived
   from them, so those two feed it directly in addition to feeding
   `pattern_analysis`. `error_analysis` is the exception only in mechanism: it
   arrives via `route_after_error_analysis` rather than a plain edge, because the
   same branch point also owns the web-search detour.
-- **`recommendation` also takes a direct edge from `parser`.** That fourth edge
+- **`prepare_output` also takes a direct edge from `parser`.** That fourth edge
   out of `parser` carries `parser_metrics`, which reaches the synthesis no other
   way: every analysis stage publishes its own artifact rather than forwarding
   its inputs, so `statistics` deliberately omits parser health and `timeline`
@@ -666,9 +666,9 @@ a single lap: `web_search` writes a list on *every* path including every failure
 path, so the router never sees `None` twice. A node that left the field unset on
 failure would search, fail, and be routed straight back into another search.
 
-The `recommendation` node is registered with `defer=True` for the same reason —
+The `prepare_output` node is registered with `defer=True` for the same reason —
 without it the join fires as soon as the plain edges have been written and
-`recommendation` would run twice, once on an incomplete state.
+`prepare_output` would run twice, once on an incomplete state.
 
 ### Retrieval and relevance
 
@@ -741,12 +741,12 @@ errors (payment declined, out of stock, invalid order, shipping delay).
 
 | Test | LLM Provider | Dataset / Source | Log Type | `enable_web_search` | Decision Pass Outcome | Web Node Executed? | Graph Routing Path |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Test 1 | DeepSeek | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `true` | Emitted search query | Yes | error_analysis → web_search → error_analysis → recommendation |
-| Test 2 | DeepSeek | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `false` | Bypassed by flag | No | error_analysis → recommendation |
-| Test 3 | OpenAI | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `true` | Declined search (`[]`) | No | error_analysis → recommendation |
-| Test 4 | Gemini | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `true` | Declined search (`[]`) | No | error_analysis → recommendation |
-| Test 5 | Anthropic | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `true` | Declined search (`[]`) | No | error_analysis → recommendation |
-| Test 6 | DeepSeek | `java_spring_boot_large.json.log` | Application Business Errors | `true` | Declined search (`[]`) | No | error_analysis → recommendation |
+| Test 1 | DeepSeek | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `true` | Emitted search query | Yes | error_analysis → web_search → error_analysis → prepare_output |
+| Test 2 | DeepSeek | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `false` | Bypassed by flag | No | error_analysis → prepare_output |
+| Test 3 | OpenAI | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `true` | Declined search (`[]`) | No | error_analysis → prepare_output |
+| Test 4 | Gemini | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `true` | Declined search (`[]`) | No | error_analysis → prepare_output |
+| Test 5 | Anthropic | Virtual Buffer Overflow Snippet (Inline) | Niche Infrastructure | `true` | Declined search (`[]`) | No | error_analysis → prepare_output |
+| Test 6 | DeepSeek | `java_spring_boot_large.json.log` | Application Business Errors | `true` | Declined search (`[]`) | No | error_analysis → prepare_output |
 
 ### Key findings
 
@@ -870,7 +870,7 @@ degradation notes:
   every signature's `explanation` filled in;
 - `pattern_summary` carries anomalies across all four categories —
   `volume_spike`, `baseline_shift`, `logger_cascade`, `metadata_clustering`;
-- `completed_stages` reaches `report_generator`;
+- `completed_stages` reaches `write_to_db`;
 - `investigation_notes` contains no `LLM reasoning unavailable` entry. That
   absence is the assertion that matters: both nodes degrade rather than fail, so
   a connection error produces a complete-looking run whose interpretation is
@@ -881,7 +881,7 @@ Tavily credential is needed. The mock answers the decision pass with an empty
 `queries` list, which is the expected answer for ordinary errors and is what
 keeps a local run local: a query here would be served by Tavily over the real
 network, not by this server. The router therefore reads `search_queries` as
-empty and goes straight to `recommendation`, leaving `search_context` as `[]` —
+empty and goes straight to `prepare_output`, leaving `search_context` as `[]` —
 decided, with nothing to show for it. To exercise the retrieval loop itself, use
 a real provider.
 

@@ -2,7 +2,7 @@
 
 Every data structure that crosses a node boundary is defined here, exactly
 once, and imported by the feature packages under ``graph_library/`` (``parser``,
-``statistics``, ``timeline``, ``recommendation``, ``report``, ``api``,
+``statistics``, ``timeline``, ``prepare_output``, ``write_to_db``, ``api``,
 ``database``).
 
 Architectural rules:

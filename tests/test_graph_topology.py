@@ -10,7 +10,7 @@ What is pinned here:
     * the exact node set, so a removed node (``coordinator``) cannot creep back
       in and a new one cannot land undocumented;
     * the exact edge set, since ``pattern_analysis`` reading the deterministic
-      pair, ``recommendation`` reading all four stages, and ``recommendation``
+      pair, ``prepare_output`` reading all four stages, and ``prepare_output``
       reading ``parser_metrics`` straight from ``parser`` are all invisible in
       the output when miswired;
     * acyclicity, with the one bounded ``error_analysis <-> web_search`` loop
@@ -32,8 +32,8 @@ EXPECTED_NODES = {
     "statistics",
     "timeline",
     "pattern_analysis",
-    "recommendation",
-    "report_generator",
+    "prepare_output",
+    "write_to_db",
     "__end__",
 }
 
@@ -51,15 +51,15 @@ EXPECTED_EDGES = {
     # pattern_analysis runs downstream of both deterministic nodes
     ("statistics", "pattern_analysis"),
     ("timeline", "pattern_analysis"),
-    # every analysis stage fans in to recommendation, and so does the parser —
+    # every analysis stage fans in to prepare_output, and so does the parser —
     # ``parser_metrics`` reaches the synthesis no other way
-    ("error_analysis", "recommendation"),
-    ("statistics", "recommendation"),
-    ("timeline", "recommendation"),
-    ("pattern_analysis", "recommendation"),
-    ("parser", "recommendation"),
-    ("recommendation", "report_generator"),
-    ("report_generator", "__end__"),
+    ("error_analysis", "prepare_output"),
+    ("statistics", "prepare_output"),
+    ("timeline", "prepare_output"),
+    ("pattern_analysis", "prepare_output"),
+    ("parser", "prepare_output"),
+    ("prepare_output", "write_to_db"),
+    ("write_to_db", "__end__"),
 }
 
 #: Pinned separately from the set above so a *duplicate* edge, or an extra one
@@ -108,20 +108,20 @@ def test_the_edge_set_is_exactly_what_the_topology_documents() -> None:
 
 def test_the_edge_count_matches_and_no_edge_is_declared_twice() -> None:
     # Read as a list rather than through ``_graph``: the set comparison above
-    # cannot tell one ``parser -> recommendation`` edge from two.
+    # cannot tell one ``parser -> prepare_output`` edge from two.
     declared = [(edge.source, edge.target) for edge in compile_graph().get_graph().edges]
 
     assert len(declared) == EXPECTED_EDGE_COUNT
     assert len(set(declared)) == len(declared)
 
 
-def test_recommendation_reads_the_parser_directly() -> None:
+def test_prepare_output_reads_the_parser_directly() -> None:
     # ``parser_metrics`` reaches the synthesis through this edge and no other:
     # every analysis stage publishes its own artifact rather than forwarding
     # its inputs. Pinned on its own so the reason survives a future edit to
     # the edge list.
     _, edges = _graph()
-    assert ("parser", "recommendation") in edges
+    assert ("parser", "prepare_output") in edges
 
 
 def test_no_node_is_orphaned() -> None:
@@ -188,11 +188,11 @@ def test_execution_order_follows_the_documented_dependencies() -> None:
     assert at["parser"] < at["statistics"]
     assert at["parser"] < at["timeline"]
     # The direct edge must not pull the fan-in forward: ``defer`` still holds
-    # ``recommendation`` until every branch has landed, so the earliest
+    # ``prepare_output`` until every branch has landed, so the earliest
     # contributor to its join does not get to start it.
-    assert at["parser"] < at["recommendation"]
+    assert at["parser"] < at["prepare_output"]
     assert at["statistics"] < at["pattern_analysis"]
     assert at["timeline"] < at["pattern_analysis"]
-    assert at["pattern_analysis"] < at["recommendation"]
-    assert at["error_analysis"] < at["recommendation"]
-    assert at["recommendation"] < at["report_generator"]
+    assert at["pattern_analysis"] < at["prepare_output"]
+    assert at["error_analysis"] < at["prepare_output"]
+    assert at["prepare_output"] < at["write_to_db"]

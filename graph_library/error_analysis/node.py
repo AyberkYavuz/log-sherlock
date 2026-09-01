@@ -41,7 +41,7 @@ The node degrades rather than fails. An empty payload, a provider package that
 is not installed, a call that raises, a search that finds nothing: all produce
 a valid ``ErrorSummary`` with the deterministic findings intact and the reason
 recorded in ``investigation_notes``; the graph's three sibling branches and the
-downstream recommendation node keep running.
+downstream prepare_output node keep running.
 
 That resilience has a cost in visibility: a degraded run and a healthy one
 return the same shape, and the only trace of the failure is one sentence in
