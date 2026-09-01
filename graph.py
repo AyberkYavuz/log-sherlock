@@ -12,10 +12,11 @@ No business logic lives here: implemented nodes are built in their own feature
 packages under ``graph_library/`` (``graph_library/parser/``,
 ``graph_library/stats/``, ``graph_library/timeline/``,
 ``graph_library/pattern_analysis/``, ``graph_library/error_analysis/``,
-``graph_library/web_search/``) and merely registered below.
+``graph_library/web_search/``, ``graph_library/prepare_output/``) and merely
+registered below.
 Every node that is not implemented yet is a deterministic stub that documents
 its future responsibility via a ``TODO`` block and returns an empty state
-delta. The ``prepare_output`` and ``write_to_db`` stages are intentionally left
+delta. The ``write_to_db`` stage is the last one intentionally left
 unimplemented.
 
 Topology (fixed workflow)::
@@ -67,16 +68,18 @@ from graph_library.models import (
     ParserMetrics,
     PatternSummary,
     Statistics,
+    StructuredInvestigationReport,
     TimelineEvent,
 )
 
-# The error_analysis, parser, pattern_analysis, statistics, timeline and
-# web_search nodes are implemented as standalone feature packages under
-# ``graph_library/``. They are imported here and registered directly in
+# The error_analysis, parser, pattern_analysis, prepare_output, statistics,
+# timeline and web_search nodes are implemented as standalone feature packages
+# under ``graph_library/``. They are imported here and registered directly in
 # ``build_graph`` — this module defines no stub for them.
 from graph_library.error_analysis import error_analysis_node
 from graph_library.parser import parser_node
 from graph_library.pattern_analysis import pattern_analysis_node
+from graph_library.prepare_output import prepare_output_node
 from graph_library.stats import statistics_node
 from graph_library.timeline import timeline_node
 from graph_library.web_search.node import web_search_node
@@ -85,7 +88,8 @@ from graph_library.web_search.node import web_search_node
 # Payload type aliases
 # ---------------------------------------------------------------------------
 # Concrete models (``ParsedLogEntry``, ``ParserMetrics``, ``Statistics``,
-# ``TimelineEvent``, ``ErrorSummary``, ``PatternSummary``) now live in the
+# ``TimelineEvent``, ``ErrorSummary``, ``PatternSummary``,
+# ``StructuredInvestigationReport``) now live in the
 # shared ``models`` package. The alias below remains a deliberately loose
 # (``dict[str, Any]``) placeholder for a payload whose node is not yet
 # implemented; it should graduate into a ``models`` module as that node lands,
@@ -108,19 +112,6 @@ class ExecutionMetadata(TypedDict, total=False):
         latency_ms: int
         execution_time: str
         estimated_cost: float
-    """
-
-
-class StructuredInvestigationReport(TypedDict, total=False):
-    """Placeholder for the machine-readable investigation report.
-
-    Deliberately empty for now. This is the type we intend to grow into the
-    persisted database model, so it gets a dedicated name (rather than a loose
-    ``dict[str, Any]``) from day one.
-
-    TODO: define the concrete report schema here, e.g. application identity,
-    root cause, confidence, key errors/patterns, timeline highlights and the
-    historical comparison — then reuse it as the storage/DB model.
     """
 
 
@@ -230,37 +221,6 @@ class LogSherlockState(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # Every node accepts the full state and returns a *partial* state delta. Nodes
 # never mutate the incoming state in place — they return only the keys they own.
-
-
-def prepare_output_node(state: LogSherlockState) -> LogSherlockState:
-    """LLM agent that synthesizes findings into a root cause + recommendation.
-
-    This is the fan-in point: it reads every WORKING artifact produced by the
-    four analysis stages and compares them against ``historical_context``.
-
-    It also takes a direct edge from ``parser`` in order to read
-    ``parser_metrics``, which no analysis stage forwards. Those metrics are what
-    let a conclusion be qualified rather than merely stated: a root cause
-    inferred from a payload where a third of the lines were malformed, or where
-    most entries carried no timestamp, deserves a lower ``confidence_score`` and
-    an explicit caveat in the summary.
-
-    TODO:
-        * Fuse error_summary, pattern_summary, statistics and timeline.
-        * Weigh the findings against ``parser_metrics`` — malformed-line and
-          missing-timestamp counts bound how much the analysis can be trusted.
-        * Compare current signals against prior investigations (regressions,
-          recurring issues, drift) from ``historical_context``.
-        * Infer the most likely ``root_cause`` and a ``confidence_score``,
-          discounted for poor ingestion health.
-        * Draft the ``executive_summary``, surfacing any data-quality caveat.
-    """
-    return {
-        "executive_summary": "",
-        "root_cause": "",
-        "confidence_score": 0,
-        "completed_stages": ["prepare_output"],
-    }
 
 
 def write_to_db_node(state: LogSherlockState) -> LogSherlockState:
