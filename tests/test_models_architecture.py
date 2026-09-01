@@ -204,6 +204,7 @@ def test_models_package_exports() -> None:
         "PatternSummary",
         "SystemAnomaly",
         "SystemAnomalyRecord",
+        "StructuredInvestigationReport",
         "CategoryCount",
         "SeveritySummary",
         "Statistics",
