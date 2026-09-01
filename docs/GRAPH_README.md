@@ -9,9 +9,10 @@ document describes the nodes of that graph that are **fully implemented today**:
 - **Pattern Analysis** — reads those two reports and says what about them is abnormal
 - **Error Analysis** — groups the errors and explains which one started it
 - **Web Search** — optionally fetches external documentation for obscure errors
+- **Prepare Output** — fans every finding in, scores it, and serializes the report
 
-Each node is described from its Python source. Nodes that are still stubs in
-`graph.py` are deliberately not documented here.
+Each node is described from its Python source. `write_to_db` is the one node
+still stubbed in `graph.py` and is deliberately not documented here.
 
 ---
 
@@ -56,7 +57,9 @@ Three things about that shape are worth stating plainly:
   conclusion be *qualified* rather than merely stated — a root cause inferred
   from a payload where a third of the lines were malformed, or where most
   entries carried no timestamp, warrants a lower confidence score and an
-  explicit data-quality caveat in the report.
+  explicit data-quality caveat in the report. Those metrics are the input to the
+  deterministic scoring engine documented under
+  [Prepare Output Node](#prepare-output-node).
 
 The one deviation from "fixed" is the `error_analysis ↔ web_search` loop, and it
 is bounded to a single lap. `web_search` always writes `search_context` — a list
@@ -718,6 +721,268 @@ and no more.
 
 ---
 
+## Prepare Output Node
+
+**Module:** `graph_library/prepare_output/node.py` · **Entry point:** `prepare_output_node(state)`
+
+The Prepare Output node answers *"so what actually happened, and how much should
+anyone trust that answer?"* It is the graph's fan-in: the first and only node
+that sees every upstream artifact at once, reached by a plain edge from
+`statistics`, `timeline` and `pattern_analysis`, by the conditional branch out of
+`error_analysis`, and by the fourth edge out of `parser` that carries
+`parser_metrics`. It is registered with `defer=True`, which is what holds it
+until every one of those branches has landed — see
+[How the Nodes Fit Together](#how-the-nodes-fit-together).
+
+**Reads:** `parser_metrics`, `statistics`, `timeline`, `error_summary`,
+`pattern_summary`, `investigation_notes`, `historical_context`,
+`application_name`, `investigation_timestamp`, `llm_provider`, `analysis_mode`
+**Writes:** `root_cause`, `executive_summary`, `confidence_score`,
+`structured_report`, `completed_stages`, and `investigation_notes` when there is
+something to record
+
+The node has two responsibilities, and they are worth separating because they
+serve different consumers:
+
+- **Synthesis for humans.** One batched LLM call turns five payloads into a
+  one-sentence `root_cause` and a multi-paragraph `executive_summary`, published
+  alongside a `confidence_score` that is *not* asked of the model. These are the
+  fields a dashboard headline and an alert body are built from.
+- **Serialization for machines.** Every upstream artifact is assembled verbatim
+  into `structured_report`, the composite artifact a UI hydrates from and the
+  `write_to_db` node persists to PostgreSQL. Nothing is summarized on the way
+  in: a client that wants to draw the timeline needs the timeline, not a
+  sentence about it.
+
+The order matters. The confidence score is computed *before* anything is asked of
+a model, because it is the one number in the report that must not depend on
+whether the call succeeded.
+
+### The deterministic pass — confidence scoring
+
+`graph_library/prepare_output/scoring.py` computes `confidence_score` by
+arithmetic over parser health and the error analysis. Asking the model instead
+would measure the wrong thing: a model rates the clarity of the signal it was
+shown and has no way to know that a third of the payload never reached it. The
+four penalties below are exactly the things a model cannot see.
+
+| Rule | Deduction | Source |
+| --- | --- | --- |
+| Base score | starts at `100` | — |
+| Malformed lines | −1 pt per 1% | `malformed_lines / total_lines` |
+| Missing timestamps | −1 pt per 2% | `missing_timestamp_lines / parsed_lines` |
+| Root-cause ambiguity | −15 pts | `error_summary.primary_error_signature_id` is `None` |
+| Low parser confidence | −10 pts | `parser_metrics.parser_confidence < 0.80` |
+| Synthesis fallback | −10 pts | applied when the LLM pass did not answer |
+| Bounds | clamped to `[0, 100]` | `max(0, min(100, score))` |
+
+Four details are load-bearing:
+
+- **The two ratio penalties carry different weights on purpose.** A malformed
+  line contributed *nothing* to any downstream analysis, so it is pure missing
+  evidence at 1 point per percent. An entry with no timestamp still reached the
+  statistics and the error fingerprinting and only dropped out of the timeline —
+  partial evidence rather than absent — so it costs half as much.
+- **Ambiguity is the largest single penalty** because a root-cause statement with
+  no root-cause candidate behind it is the output most likely to read more
+  certain than it is.
+- **Rounding happens once, at the end.** Two sub-point penalties therefore cost a
+  point together rather than nothing each — 1 malformed line and 2 missing
+  timestamps out of 300 is 0.33 + 0.33 points, and rounding either alone would
+  discard it.
+- **An unmeasurable payload is not a bad one.** A zero or missing denominator
+  yields no ratio penalty rather than a maximal one; "we could not tell" is not
+  evidence of poor quality, and the empty analysis such a payload produces is
+  already caught by the ambiguity penalty. A `parser_confidence` of exactly
+  `0.80` is good enough — the penalty applies strictly below it — while a genuine
+  `0.0` is penalized rather than misread as "not reported".
+
+Every weight is a named module constant, so the whole policy is readable at a
+glance and tuning it is a one-line edit. `confidence_breakdown(state)` returns
+the same figures per penalty and is what the node logs, because a report that
+scored 61 raises "why?" and a single number cannot answer it.
+
+### The LLM pass — synthesis
+
+`graph_library/prepare_output/prompts.py` assembles seven sections into one turn,
+ordered from measurement to inference: `PARSER HEALTH`, `STATISTICS`, `TIMELINE`,
+`ERROR ANALYSIS`, `PATTERN ANALYSIS`, `INVESTIGATION NOTES`, `HISTORICAL
+CONTEXT`. The statistics, timeline and notes sections are the ones the Pattern
+Analysis node already renders, imported from its public surface rather than
+reimplemented, so the two nodes describe the same payload identically and remain
+comparable when their conclusions differ.
+
+Three decisions shape what gets sent:
+
+- **Provenance is stated section by section.** The error and pattern summaries
+  are themselves model output, and a synthesis that treats another model's
+  inference as a measured fact compounds the first model's error. Both sections
+  are labelled as another model's conclusions, and the system prompt tells the
+  model it may disagree with them and say why. Reading the facts *before* the
+  interpretations is what makes that possible, which is why the ordering above is
+  not cosmetic.
+- **Parser health is included; the confidence score is not.** The metrics are
+  what the summary's data-quality caveat has to be built from. The deterministic
+  score derived from those same metrics is deliberately withheld, so that the
+  model's own rating stays an independent reading rather than an echo.
+- **The bounded inputs state their own omissions.** Signatures are capped at
+  `MAX_ERROR_SIGNATURES` (12) of the count-ordered batch and historical
+  investigations at `MAX_HISTORICAL_INVESTIGATIONS` (3), each with the omission
+  written into the prompt. `sample_messages` are *not* resent with the
+  signatures: the Error Analysis node has already read them and published an
+  `explanation` per signature, so repeating them is the largest avoidable cost
+  in this prompt.
+
+The system prompt is written against the three failure modes a model shows when
+handed a complete investigation: restating the inputs instead of concluding from
+them, promoting the loudest signature to the cause when it is frequently
+downstream noise, and writing with uniform certainty regardless of how much of
+the payload was readable. It requires the executive summary to cover, in order,
+what happened and when, how the failure spread, and what limits the conclusion.
+
+The response schema is `LLMPrepareOutputResult`, bound as a structured tool call
+and inheriting `_ToolArgumentEnvelope` like every other response schema in
+`graph_library/models/` — some providers nest the tool-call arguments one level
+deeper than the schema they were given, and a schema whose fields are all
+required would otherwise fail with three "field required" errors against a
+payload that actually contained them.
+
+| Field | Meaning |
+| --- | --- |
+| `root_cause` | One sentence naming the core trigger |
+| `executive_summary` | The multi-paragraph narrative |
+| `llm_confidence_score` | The model's own 0–100 rating of signal clarity |
+
+**`llm_confidence_score` never becomes the published `confidence_score`.** The
+published value is always the deterministic one. The model's self-assessment is
+logged, and a gap wider than `CONFIDENCE_DIVERGENCE_THRESHOLD` (25 points) is
+written to `investigation_notes` — the two measure different things, so a gap is
+expected and only a wide one is informative. A model reporting 95 on a payload
+scored 55 has read a clean signal out of an incomplete dataset, and that is worth
+a sentence in the investigation.
+
+### Output — `StructuredInvestigationReport`
+
+The report is partitioned by **provenance** rather than by topic, and that is the
+whole design: a reader of a stored investigation can always tell which numbers
+are facts and which sentences are inferences, without having to know which node
+produced what. That distinction is exactly what gets lost when a report is
+flattened into one bag of fields.
+
+| Section | Contents | Provenance |
+| --- | --- | --- |
+| `metadata` | `application_name`, `investigation_timestamp`, `analysis_mode`, `llm_provider`, `confidence_score`, `parser_metrics` | Run identity and ingestion health |
+| `synthesis` | `root_cause`, `executive_summary`, `investigation_notes` | This node's own conclusions |
+| `deterministic_outputs` | `statistics`, `timeline` | Arithmetic — reproducible from the same logs |
+| `ai_insights` | `error_summary`, `pattern_summary` | The two upstream LLM nodes' conclusions |
+
+```json
+{
+  "metadata": {
+    "application_name": "checkout-api",
+    "investigation_timestamp": "2026-01-01T11:00:00+00:00",
+    "analysis_mode": "standard",
+    "llm_provider": "openai",
+    "confidence_score": 90,
+    "parser_metrics": { "detected_format": "json", "total_lines": 100, "...": "..." }
+  },
+  "synthesis": {
+    "root_cause": "The payment client lost its database connection, which stalled every downstream order.",
+    "executive_summary": "At 10:05 the payment client began refusing connections...",
+    "investigation_notes": ["Parser: 3 malformed lines were skipped."]
+  },
+  "deterministic_outputs": {
+    "statistics": { "severity": { "...": "..." }, "...": "..." },
+    "timeline": [{ "event_type": "milestone", "milestone_kind": "first_error", "...": "..." }]
+  },
+  "ai_insights": {
+    "error_summary": { "primary_error_signature_id": "ERR_001", "...": "..." },
+    "pattern_summary": { "anomalies": [{ "...": "..." }], "...": "..." }
+  }
+}
+```
+
+Two notes on the fields:
+
+- `metadata.analysis_mode` and `metadata.llm_provider` record the *normalized*
+  values — the run's reproducibility record, so `anthropic` is what appears when
+  the caller typed `Claude`. `metadata.confidence_score` is the same value as the
+  `confidence_score` state field, carried inside the report so a persisted row is
+  self-contained.
+- `synthesis.investigation_notes` is a snapshot of the *upstream* notes as they
+  stood when the report was built, copied rather than aliased so the graph's
+  additive reducer cannot mutate a report that has already been assembled. This
+  node's own notes — a degradation reason, a substituted model, a wide confidence
+  gap — reach the graph's `investigation_notes` channel instead, and so appear in
+  the final state rather than in this snapshot.
+
+### Degradation
+
+The node degrades rather than fails, and here that guarantee is stronger than
+elsewhere in the graph: this is the node that produces the artifact everything
+downstream persists, so it must publish a complete `structured_report` on every
+path. Four failure modes are caught, all of them into the same fallback:
+
+- **A call that raises or times out** — no credential, an unreachable endpoint, a
+  rate limit, a reset connection.
+- **A provider package that is not installed** — the `ImportError` from the lazy
+  SDK import in `llm_factory`.
+- **A response that does not satisfy the schema** — validation happens *inside*
+  the guard, not after it, so a `ValidationError` against a well-formed but wrong
+  payload takes the fallback path instead of escaping the one node that must
+  always publish.
+- **An entirely empty investigation** — no statistics, no timeline, no error
+  signatures and no patterns. The call is skipped rather than spending a request
+  to be told the input was empty, and `NO_INPUT_NOTE` says so verbatim, so a
+  reader can tell "nothing went wrong" from "there was nothing to look at".
+
+On every one of those paths the node publishes `FALLBACK_ROOT_CAUSE` and
+`FALLBACK_EXECUTIVE_SUMMARY` — fixed text worded to be unmistakably an *absence*
+rather than a finding, so a UI showing it is showing the truth about the run —
+records the reason in `investigation_notes`, and applies the additional −10
+`FALLBACK_PENALTY` to the score. Every deterministic number in a degraded report
+is exactly as accurate as it would have been in a healthy one; what is missing is
+the reasoning that connects them, and the discounted score is what says so.
+
+Because both paths build the report through the same assembly step, a degraded
+run and a healthy one publish an identical shape — the difference shows up in the
+synthesis text, the confidence score and the notes, never in the schema, so no
+downstream consumer has to ask which one it got. Upstream artifacts are read
+defensively even though the fan-in guarantees every producer has run: a missing
+section is recoverable, and a `KeyError` here would lose an entire investigation
+that was otherwise complete.
+
+### Model selection
+
+The node reuses `graph_library/error_analysis/llm_factory.py` wholesale, exactly
+as the Pattern Analysis node does — the same five providers, the same three
+tiers, the same `(provider, mode)` routing, the same `MODEL_FALLBACKS` chain and
+the same `is_model_unavailable` classification. Only a model-identity failure is
+retried; an expired key, a rate limit or a timeout is raised straight through and
+degrades, because swapping the model would burn another request and fail the same
+way. A substitution is always recorded in `investigation_notes`, since a silent
+one would make the report unreproducible.
+
+### Known limitation — `write_to_db` overwrites the report
+
+The `write_to_db` node is still a stub in `graph.py` and returns
+`"structured_report": {}`. It runs immediately after this node, the field has no
+reducer, and the later write wins — so **the final state's `structured_report` is
+an empty dict** even though this node published a complete one. `root_cause`,
+`executive_summary` and `confidence_score` are unaffected and do survive to the
+final state.
+
+Until that node is implemented, observe the report through per-node updates
+rather than the final state:
+
+```python
+for update in compile_graph().stream(inputs, stream_mode="updates"):
+    if "prepare_output" in update:
+        report = update["prepare_output"]["structured_report"]
+```
+
+---
+
 ## Web Search Node Benchmark
 
 Six end-to-end runs across four LLM providers, exercising both the two-pass loop
@@ -803,11 +1068,13 @@ transports (plain JSON and `text/event-stream`), routes on the response schema
 each node binds, and derives its answer from the prompt it was sent rather than
 returning a canned blob. No API key, no network, no GPU.
 
-Both LLM nodes reach it in a single run. `llm_provider` is read from graph state
-by every LLM node, so one setting points `error_analysis` and `pattern_analysis`
-at the same endpoint, where they ask for different schemas —
-`LLMErrorAnalysisResult` and `LLMSearchDecision` for the first,
-`PatternAnalysisResult` for the second.
+Every LLM node reaches it in a single run. `llm_provider` is read from graph
+state by all of them, so one setting points `error_analysis`,
+`pattern_analysis` and `prepare_output` at the same endpoint, where they ask for
+different schemas — `LLMErrorAnalysisResult` and `LLMSearchDecision` for the
+first, `PatternAnalysisResult` for the second, `LLMPrepareOutputResult` for the
+third. The server currently has a payload builder for the first three only; see
+[Expected results](#expected-results) for what that means for `prepare_output`.
 
 ### 1. Verify `.env` settings
 
@@ -852,29 +1119,53 @@ the field.
 
 ### Expected results
 
-**Mock server (terminal 1)** — three `200 OK` responses, one per structured call:
+**Mock server (terminal 1)** — four `200 OK` responses, one per structured call:
 
 ```
+INFO:     127.0.0.1:50677 - "POST /v1/chat/completions HTTP/1.1" 200 OK
 INFO:     127.0.0.1:50677 - "POST /v1/chat/completions HTTP/1.1" 200 OK
 INFO:     127.0.0.1:50677 - "POST /v1/chat/completions HTTP/1.1" 200 OK
 INFO:     127.0.0.1:50677 - "POST /v1/chat/completions HTTP/1.1" 200 OK
 ```
 
 One is the error-analysis search-decision pass, one the error-analysis
-root-cause pass, one the pattern-analysis call.
+root-cause pass, one the pattern-analysis call, and one the prepare-output
+synthesis call.
 
-**Graph output** — both LLM nodes complete against their own schemas, with no
-degradation notes:
+**Graph output** — the error-analysis and pattern-analysis nodes complete against
+their own schemas, with no degradation notes:
 
 - `error_summary` carries 3 signatures with `primary_error_signature_id` set and
   every signature's `explanation` filled in;
 - `pattern_summary` carries anomalies across all four categories —
   `volume_spike`, `baseline_shift`, `logger_cascade`, `metadata_clustering`;
 - `completed_stages` reaches `write_to_db`;
+- `confidence_score` is populated and `root_cause` / `executive_summary` are
+  present;
 - `investigation_notes` contains no `LLM reasoning unavailable` entry. That
   absence is the assertion that matters: both nodes degrade rather than fail, so
   a connection error produces a complete-looking run whose interpretation is
   silently missing, and the note is the only place it shows.
+
+**On `prepare_output` against this server** — the fourth call is answered, but
+not with a payload its schema accepts, so **the node degrades on purpose-built
+local runs today**. `tests/mock_local_llm.py` keys its `PAYLOAD_BUILDERS` on the
+schema name the client puts on the wire and has no row for
+`LLMPrepareOutputResult`. Resolution therefore falls through to the prompt
+markers, matches the `STATISTICS` heading that the synthesis prompt also carries,
+and returns a `PatternAnalysisResult` payload. The node's guard catches the
+resulting `ValidationError`, publishes `FALLBACK_ROOT_CAUSE` /
+`FALLBACK_EXECUTIVE_SUMMARY` with the score discounted by 10, and records an
+`LLM synthesis unavailable (ValidationError: ...)` note. That is the degradation
+path working exactly as designed — the `structured_report` is still complete and
+every deterministic number in it is still exact — but it is not an end-to-end
+exercise of the synthesis call.
+
+Adding one row to `PAYLOAD_BUILDERS` for `LLMPrepareOutputResult` is what turns
+this into a clean four-node local run; the module's own docstring already says
+adding an LLM node means adding a row there. Until then, use a real provider to
+exercise the synthesis pass, and read the `investigation_notes` entry above as
+expected rather than as a fault.
 
 **On `enable_web_search`** — the flag is honoured, but no search runs and no
 Tavily credential is needed. The mock answers the decision pass with an empty
@@ -925,6 +1216,15 @@ Measured, per fixture:
 | `java_spring_boot_large.json.log` | 3.65 MB | 7,796 | 8.44 MB | **12.09 MB** |
 | `typescript_pino_recovery.log` | 0.71 MB | 2,504 | 1.73 MB | 2.44 MB |
 | `fastapi_recovery.log` | 0.02 MB | 269 | 0.07 MB | 0.09 MB |
+
+The figures above predate the Prepare Output node, which adds a second copy of
+the *analysis* artifacts to the snapshot: `structured_report` carries
+`statistics`, `timeline`, `error_summary` and `pattern_summary` verbatim, by
+design, so a persisted report is self-contained. It does **not** duplicate
+`raw_logs` or `parsed_logs`, which are what the numbers above are dominated by,
+so the thresholds and the guidance below still hold — the timeline is the only
+one of the four that scales with log volume at all, and it scales with the number
+of *buckets*, not entries.
 
 **Solution.**
 
