@@ -232,8 +232,9 @@ Node correctness is validated through several complementary approaches:
   guards the dependency direction
 - regression tests that guard against quiet quality drops
 - a sample log corpus that exercises every supported ecosystem end to end
-- a local mock LLM server so the error-analysis paths can be tested without
-  reaching a provider
+- a local mock LLM server covering all four response schemas, so the
+  error-analysis, pattern-analysis and prepare-output paths can all be tested
+  without reaching a provider
 - manual verification through LangGraph Studio
 
 Together these keep the graph stable as new nodes and ecosystems are added.

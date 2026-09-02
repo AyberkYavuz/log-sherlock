@@ -1068,13 +1068,25 @@ transports (plain JSON and `text/event-stream`), routes on the response schema
 each node binds, and derives its answer from the prompt it was sent rather than
 returning a canned blob. No API key, no network, no GPU.
 
-Every LLM node reaches it in a single run. `llm_provider` is read from graph
-state by all of them, so one setting points `error_analysis`,
-`pattern_analysis` and `prepare_output` at the same endpoint, where they ask for
-different schemas — `LLMErrorAnalysisResult` and `LLMSearchDecision` for the
-first, `PatternAnalysisResult` for the second, `LLMPrepareOutputResult` for the
-third. The server currently has a payload builder for the first three only; see
-[Expected results](#expected-results) for what that means for `prepare_output`.
+**All three LLM nodes reach it in a single run, across four schemas.**
+`llm_provider` is read from graph state by all of them, so one setting points
+`error_analysis`, `pattern_analysis` and `prepare_output` at the same endpoint,
+where they ask for four different response schemas:
+
+| Node | Schema | Pass |
+| :--- | :--- | :--- |
+| `error_analysis` | `LLMSearchDecision` | Pass 1 — search triage |
+| `error_analysis` | `LLMErrorAnalysisResult` | Pass 2 — root cause |
+| `pattern_analysis` | `PatternAnalysisResult` | Behavioral patterns |
+| `prepare_output` | `LLMPrepareOutputResult` | Fan-in synthesis |
+
+The server has a payload builder for every one of them, so **`prepare_output`
+no longer takes its degradation path on a local mock run.** It receives a
+payload its schema accepts and publishes derived `root_cause`,
+`executive_summary` and `llm_confidence_score` values rather than
+`FALLBACK_ROOT_CAUSE` / `FALLBACK_EXECUTIVE_SUMMARY` with a discounted score.
+See [Expected results](#expected-results) for what a healthy run looks like and
+[Verified manual run](#verified-manual-run) for one that was actually observed.
 
 ### 1. Verify `.env` settings
 
@@ -1086,7 +1098,7 @@ LOCAL_LLM_API_KEY=cant-be-empty
 
 The port in `LOCAL_LLM_BASE_URL` must match the port the server is started on in
 step 2. A mismatch fails as `openai.APIConnectionError: Connection error` from
-both LLM nodes while the mock's terminal logs nothing at all — the client is
+every LLM node while the mock's terminal logs nothing at all — the client is
 knocking on a closed port, so there is no request for the server to report. The
 key is a placeholder the mock ignores; it only has to be non-empty, because the
 OpenAI client refuses to send a blank one. `langgraph.json` already loads `.env`
@@ -1109,7 +1121,7 @@ langgraph dev
 
 | Input | Value |
 | :--- | :--- |
-| `application_name` | `test1` |
+| `application_name` | `mock_local_llm.py test 1` |
 | `llm_provider` | `local` |
 | `enable_web_search` | `true` |
 | `raw_logs` | contents of `sample_logs/typescript_pino_recovery.log` |
@@ -1132,40 +1144,39 @@ One is the error-analysis search-decision pass, one the error-analysis
 root-cause pass, one the pattern-analysis call, and one the prepare-output
 synthesis call.
 
-**Graph output** — the error-analysis and pattern-analysis nodes complete against
-their own schemas, with no degradation notes:
+**Graph output** — all three LLM nodes complete against their own schemas, with
+no degradation notes:
 
 - `error_summary` carries 3 signatures with `primary_error_signature_id` set and
   every signature's `explanation` filled in;
 - `pattern_summary` carries anomalies across all four categories —
   `volume_spike`, `baseline_shift`, `logger_cascade`, `metadata_clustering`;
+- `root_cause` and `executive_summary` carry the mock's derived synthesis, not
+  the fallback text — both open with `Mock local model:`;
+- `confidence_score` is the deterministic score, undiscounted, because no
+  fallback penalty was applied;
 - `completed_stages` reaches `write_to_db`;
-- `confidence_score` is populated and `root_cause` / `executive_summary` are
-  present;
-- `investigation_notes` contains no `LLM reasoning unavailable` entry. That
-  absence is the assertion that matters: both nodes degrade rather than fail, so
-  a connection error produces a complete-looking run whose interpretation is
-  silently missing, and the note is the only place it shows.
+- `investigation_notes` contains no `LLM reasoning unavailable` and no
+  `LLM synthesis unavailable` entry. That absence is the assertion that matters:
+  every one of these nodes degrades rather than fails, so a connection error
+  produces a complete-looking run whose interpretation is silently missing, and
+  the note is the only place it shows.
 
-**On `prepare_output` against this server** — the fourth call is answered, but
-not with a payload its schema accepts, so **the node degrades on purpose-built
-local runs today**. `tests/mock_local_llm.py` keys its `PAYLOAD_BUILDERS` on the
-schema name the client puts on the wire and has no row for
-`LLMPrepareOutputResult`. Resolution therefore falls through to the prompt
-markers, matches the `STATISTICS` heading that the synthesis prompt also carries,
-and returns a `PatternAnalysisResult` payload. The node's guard catches the
-resulting `ValidationError`, publishes `FALLBACK_ROOT_CAUSE` /
-`FALLBACK_EXECUTIVE_SUMMARY` with the score discounted by 10, and records an
-`LLM synthesis unavailable (ValidationError: ...)` note. That is the degradation
-path working exactly as designed — the `structured_report` is still complete and
-every deterministic number in it is still exact — but it is not an end-to-end
-exercise of the synthesis call.
+**On `prepare_output` against this server** — the fourth call is answered with a
+payload its schema accepts, so the node takes its healthy path end to end. The
+mock keys `PAYLOAD_BUILDERS` on the schema name the client puts on the wire and
+has a row for `LLMPrepareOutputResult`; where the request declares no name it
+resolves on the schema's own `llm_confidence_score` field, and where it declares
+neither it resolves on the `PARSER HEALTH` heading that only the synthesis
+prompt carries. That last marker is checked *before* the `STATISTICS` one,
+because `prepare_output` reuses the pattern-analysis formatters and therefore
+carries that heading too — an ordering that is load-bearing rather than
+cosmetic.
 
-Adding one row to `PAYLOAD_BUILDERS` for `LLMPrepareOutputResult` is what turns
-this into a clean four-node local run; the module's own docstring already says
-adding an LLM node means adding a row there. Until then, use a real provider to
-exercise the synthesis pass, and read the `investigation_notes` entry above as
-expected rather than as a fault.
+The fallback path is still reachable and still correct; it is simply no longer
+what a local run exercises. To see it, point `LOCAL_LLM_BASE_URL` at a closed
+port: the node publishes `FALLBACK_ROOT_CAUSE` / `FALLBACK_EXECUTIVE_SUMMARY`,
+discounts the score by 10, and records the reason in `investigation_notes`.
 
 **On `enable_web_search`** — the flag is honoured, but no search runs and no
 Tavily credential is needed. The mock answers the decision pass with an empty
@@ -1178,12 +1189,89 @@ a real provider.
 
 **On the mock's answers** — they are derived, not canned, and deliberately
 distinguishable from the deterministic fallbacks. Error analysis nominates the
-last signature in the batch (the lowest-volume one) as the root cause; pattern
+last signature in the batch (the lowest-volume one) as the root cause. Pattern
 analysis decodes the STATISTICS and TIMELINE blocks back out of the prompt and
-reports the real loggers, timestamps and metadata values it was sent, opening
-its `behavioral_synthesis` with `Mock local model:`. If a summary instead opens
-with `Deterministic summary`, the model was never reached and the node fell back
-to arithmetic.
+reports the real loggers, timestamps and metadata values it was sent. Prepare
+output decodes all five sections of the synthesis prompt — PARSER HEALTH,
+STATISTICS, TIMELINE, ERROR ANALYSIS and PATTERN ANALYSIS — and writes a root
+cause naming the signature the error-analysis node actually nominated, a
+three-paragraph summary in the order that node's own system prompt requires
+(what happened and when, how the failure spread, what limits the conclusion),
+and an `llm_confidence_score` derived from how clearly the evidence points at
+one cause.
+
+The two narrative fields — `behavioral_synthesis` and the prepare-output
+`root_cause` / `executive_summary` — open with `Mock local model:`, and that
+prefix is the assertion, because those are the fields whose deterministic
+fallbacks are otherwise shaped identically. A `behavioral_synthesis` opening
+with `Deterministic summary` means the pattern node fell back to arithmetic; a
+`root_cause` reading `Root cause undetermined` means the synthesis call never
+landed. Neither should appear on a healthy local run. The error-analysis fields
+carry no such prefix and need none: they echo signature ids, which are checkable
+against the batch directly.
+
+### Verified manual run
+
+The run below was executed through `langgraph dev` against the mock server and
+is the reference for what a healthy four-call local run produces. Two terminals,
+exactly as in steps 2 and 3:
+
+```bash
+# terminal 1
+python3 -m uvicorn tests.mock_local_llm:app --port 8080
+
+# terminal 2
+langgraph dev
+```
+
+Inputs, as entered in the Studio UI:
+
+| Input | Value |
+| :--- | :--- |
+| `application_name` | `mock_local_llm.py test 1` |
+| `llm_provider` | `local` |
+| `enable_web_search` | `true` |
+| `raw_logs` | contents of `sample_logs/typescript_pino_recovery.log` |
+
+**`error_summary.cascading_impact_summary`** — the batched root-cause pass,
+nominating the lowest-volume signature as the mock's heuristic requires:
+
+> ERR_003 is the lowest-volume failure in the batch and is nominated as the
+> trigger; the remaining 2 signature(s) are treated as downstream fallout from
+> it.
+
+**`pattern_summary.behavioral_synthesis`** — the counts are read back out of the
+STATISTICS block the node sent, not invented:
+
+> Mock local model: this narrative restates the reports it was sent and contains
+> no reasoning. The window carries 230 error-level and 44 warning-level
+> record(s) across 3 named logger(s)...
+
+**`prepare_output.root_cause`** — the signature id, its template, its logger and
+its `first_seen` are all echoes of what the error-analysis node published, which
+is what makes the synthesis traceable to the batch that produced it:
+
+> Mock local model: ERR_003 (Payment provider unavailable) logged by payment,
+> first seen 2026-07-29T10:59:26.622000+00:00, is the signature the error
+> analysis nominated, and it is carried through here as the trigger for the
+> remaining 2 signature(s) in the batch.
+
+**`prepare_output.executive_summary`** — the same 230 / 44 severity counts the
+pattern node reported, now bounded by the timeline's real coverage window:
+
+> Mock local model: this synthesis restates the investigation it was sent, in
+> the order the node's own instructions ask for, and contains no reasoning. The
+> window runs from 2026-07-29T10:59:21.422000+00:00 to
+> 2026-07-29T10:59:56.209000+00:00 and carries 230 error-level and 44
+> warning-level record(s)...
+
+Three things are worth reading off that output. The `Mock local model:` prefix
+on both synthesis fields confirms `prepare_output` reached the server rather
+than its fallback. `ERR_003` appearing in the root cause *and* in the
+error-analysis cascade summary confirms the two nodes agree on the same
+signature id, which is the merge the mock exists to exercise. And the severity
+counts matching across `pattern_summary` and `executive_summary` confirm both
+nodes were sent the same statistics report.
 
 ---
 
