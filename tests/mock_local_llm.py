@@ -6,22 +6,31 @@ smallest such server that satisfies the LLM nodes, so the full path — factory 
 ``ChatOpenAI`` → HTTP → structured-output parsing → merge — can be exercised
 without an API key, a network or a GPU.
 
-**Two nodes reach this server, not one.** ``llm_provider: "local"`` is read from
-graph state by every LLM node, so a single Studio run points both the Error
-Analysis Node and the Pattern Analysis Node here, and they ask for different
-response schemas over the same endpoint:
+**Three nodes reach this server, not one.** ``llm_provider: "local"`` is read
+from graph state by every LLM node, so a single Studio run points the Error
+Analysis Node, the Pattern Analysis Node and the Prepare Output Node here, and
+they ask for four different response schemas over the same endpoint:
 
     * :class:`~graph_library.models.LLMErrorAnalysisResult` — error analysis,
       pass 2 (the root-cause call);
     * :class:`~graph_library.models.LLMSearchDecision` — error analysis, pass 1
       (the optional "is anything here obscure?" triage);
-    * :class:`~graph_library.models.PatternAnalysisResult` — pattern analysis.
+    * :class:`~graph_library.models.PatternAnalysisResult` — pattern analysis;
+    * :class:`~graph_library.models.prepare_output.LLMPrepareOutputResult` —
+      prepare output, the fan-in synthesis pass. Three required fields —
+      ``root_cause``, ``executive_summary`` and ``llm_confidence_score`` — and
+      the node it answers is the one that must publish a
+      ``structured_report`` on every path.
 
-Answering all three with one shape is not a partial failure but an invisible
-one: a schema whose fields all carry defaults validates a foreign payload
-without complaint, discards it, and reports an empty analysis. See
-:func:`resolve_schema_name` for how a request is routed and
-:data:`PAYLOAD_BUILDERS` for what each route answers with.
+Answering all four with one shape fails in both of the ways a schema can. Where
+every field carries a default the failure is invisible rather than partial:
+``LLMSearchDecision`` validates a foreign payload without complaint, discards
+it, and reports that no search was wanted. Where the fields are required —
+``LLMPrepareOutputResult`` — it is loud but misattributed: the node catches the
+``ValidationError``, publishes ``FALLBACK_ROOT_CAUSE`` with the confidence score
+discounted, and records "LLM synthesis unavailable" against a server that
+answered every request with a ``200``. See :func:`resolve_schema_name` for how a
+request is routed and :data:`PAYLOAD_BUILDERS` for what each route answers with.
 
 The response is **derived from the request**, not canned. For error analysis the
 handler reads the ``signature_id`` values out of the prompt and returns one
@@ -30,18 +39,28 @@ node sends its signatures ranked by descending count, so that is the
 lowest-volume signature — the one the system prompt's own heuristic points at.
 For pattern analysis it decodes the STATISTICS and TIMELINE reports back out of
 the prompt and derives anomalies from the loggers, buckets and metadata
-distributions actually in them. Deriving the response makes this a real test of
-each node's merge logic (ids must line up, loggers and timestamps must be the
-ones that were sent) rather than a fixed blob that would pass even if the node
-sent the wrong batch. It performs no reasoning and is not a model.
+distributions actually in them. For prepare output it decodes all five sections
+the synthesis prompt carries — PARSER HEALTH, STATISTICS, TIMELINE, ERROR
+ANALYSIS and PATTERN ANALYSIS — and writes a root cause naming the signature the
+error-analysis node actually nominated, a three-paragraph summary following the
+order the node's own system prompt requires (what happened and when, how it
+spread, what limits the conclusion), and a confidence score derived from how
+clearly the evidence points at one cause. Deriving the response makes this a
+real test of each node's merge logic (ids must line up, loggers and timestamps
+must be the ones that were sent) rather than a fixed blob that would pass even
+if the node sent the wrong batch. It performs no reasoning and is not a model.
 
 Nothing here imports the code it stands in front of. The deterministic fallbacks
-in ``graph_library.error_analysis.fingerprint`` and
-``graph_library.pattern_analysis.fallback`` derive comparable payloads from the
+in ``graph_library.error_analysis.fingerprint``,
+``graph_library.pattern_analysis.fallback`` and the scoring in
+``graph_library.prepare_output.scoring`` derive comparable payloads from the
 same inputs, and calling them would make the mock agree with the node by
 construction — a test could no longer tell "the model answered" from "the model
 was unreachable and the fallback ran". The derivations below are deliberately
-the mock's own, with their own wording and their own thresholds.
+the mock's own, with their own wording and their own thresholds. Every text the
+mock writes opens with ``Mock local model:`` for that reason: it is what
+separates an answered synthesis from ``FALLBACK_ROOT_CAUSE``, which is the one
+distinction a local run cannot make from the shape of the report alone.
 
 Both transports the protocol defines are served, because the client picks
 between them and both are reached in practice:
@@ -83,7 +102,7 @@ import asyncio
 import json
 import re
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 from fastapi import FastAPI, Response
@@ -103,6 +122,20 @@ _SIGNATURE_ID_PATTERN = re.compile(r'"signature_id":\s*"([^"]+)"')
 #: :func:`extract_pattern_inputs`.
 _SECTION_HEADER_PATTERN = re.compile(
     r"^(STATISTICS|TIMELINE|INVESTIGATION NOTES)\b.*$", re.MULTILINE
+)
+
+#: The section headings the prepare-output prompt is built from — a superset of
+#: the pattern-analysis ones, since that node's formatters are imported and
+#: reused by this one. Bounding works the same way and matters more here,
+#: because five payloads follow one another with nothing but a heading between
+#: them: an unbounded scan from PARSER HEALTH would return the statistics.
+#: Anchored at the start of a line, which is what keeps the *system* prompt's
+#: bulleted glossary of the same names ("- PARSER HEALTH: how much of the
+#: payload was actually readable") from being read as a section of its own.
+_PREPARE_OUTPUT_SECTION_PATTERN = re.compile(
+    r"^(PARSER HEALTH|STATISTICS|TIMELINE|ERROR ANALYSIS|PATTERN ANALYSIS"
+    r"|INVESTIGATION NOTES|HISTORICAL CONTEXT)\b.*$",
+    re.MULTILINE,
 )
 
 #: Decodes one JSON value out of the middle of a larger string. ``raw_decode``
@@ -132,6 +165,47 @@ MAX_METADATA_INSIGHTS = 5
 #: How many loggers a derived cascade names. The bound exists for the same
 #: reason: a sentence naming twenty components is not a finding.
 MAX_NAMED_LOGGERS = 3
+
+#: How many error signatures the synthesis names in its cascade paragraph. The
+#: prompt carries up to twelve; an executive summary that lists all of them is a
+#: table, not a narrative.
+MAX_NAMED_SIGNATURES = 3
+
+#: The milestone kinds the synthesis walks, in *narrative* order rather than
+#: the order the timeline happens to render them: these four are the incident's
+#: inflection points, and "what happened and when" is the first thing the node's
+#: system prompt asks the executive summary to cover. ``logs_start`` /
+#: ``logs_end`` are omitted — they bound the payload, they do not describe it.
+#: Their presence is also what the confidence score treats as the timeline
+#: corroborating the diagnosis.
+_NARRATIVE_MILESTONES: tuple[str, ...] = (
+    "first_error",
+    "error_onset",
+    "peak_error_volume",
+    "recovery_onset",
+)
+
+#: Where a masked error template is cut when it is quoted into the root cause.
+#: A template is one line by construction but has no length bound, and the root
+#: cause is contracted to be a single readable sentence.
+MAX_TEMPLATE_CHARS = 120
+
+#: The mock's own scale for ``llm_confidence_score``. The field rates the
+#: *clarity of the signal*, not the completeness of the evidence — the node
+#: scores completeness itself, deterministically, and its system prompt tells
+#: the model not to discount for it — so the components below are all questions
+#: about whether the investigation points somewhere, never about how much of the
+#: payload was readable. The four sum to 100, so a fully corroborated
+#: investigation scores 100 and one that resolved nothing scores the base.
+#:
+#: The published ``confidence_score`` is unaffected either way: the node keeps
+#: its own arithmetic and only *notes* a gap wider than its divergence
+#: threshold. Such a note on a local run is the mechanism working, not a
+#: degradation — the two numbers measure different things.
+CONFIDENCE_BASE = 40
+CONFIDENCE_PRIMARY_SIGNATURE_BONUS = 25
+CONFIDENCE_MILESTONE_BONUS = 20
+CONFIDENCE_PATTERN_BONUS = 15
 
 
 def prompt_text(messages: list[dict[str, Any]]) -> str:
@@ -590,6 +664,394 @@ def build_pattern_payload(
     }
 
 
+class PrepareOutputInputs(NamedTuple):
+    """The five payloads the synthesis prompt carries, decoded back out of it.
+
+    A named tuple rather than the bare pair :func:`extract_pattern_inputs`
+    returns, because this prompt is a fan-in: six positional values with three
+    dicts among them would be unreadable at every call site.
+
+    Attributes:
+        parser_health: The parser's metrics — the only evidence in the prompt
+            for the data-quality caveat the node's system prompt requires.
+        statistics: The dataset composition, as the Statistics Node reported it.
+        timeline: The milestone and bucket events, in that order — the order the
+            prompt renders them in.
+        error_summary: The error analysis' summary-level fields, including the
+            ``primary_error_signature_id`` nomination this mock echoes back.
+        signatures: The error signatures themselves, by descending count.
+        pattern_summary: The Pattern Analysis Node's findings, sent whole.
+    """
+
+    parser_health: dict[str, Any]
+    statistics: dict[str, Any]
+    timeline: list[dict[str, Any]]
+    error_summary: dict[str, Any]
+    signatures: list[dict[str, Any]]
+    pattern_summary: dict[str, Any]
+
+
+def extract_prepare_output_inputs(
+    messages: list[dict[str, Any]],
+) -> PrepareOutputInputs:
+    """Recover every upstream report out of a prepare-output prompt.
+
+    The Prepare Output Node renders five payloads into one turn as
+    ``json.dumps`` blocks under fixed headings, so they can be read back exactly
+    — real signature ids, real logger names, real timestamps. Deriving the
+    synthesis from those is what makes the mock's answer checkable against the
+    investigation the node actually sent, and what would catch a node that sent
+    the wrong batch.
+
+    Both ERROR ANALYSIS blocks are read: the node renders its summary fields and
+    its signature list under two headings of the same name, distinguishable here
+    by the type of the value that follows.
+
+    Args:
+        messages: The ``messages`` array from the request body.
+
+    Returns:
+        A :class:`PrepareOutputInputs`. Every member may be empty: each section
+        states an absent report as prose rather than as an empty JSON value, and
+        a request that is not a prepare-output prompt at all yields all six
+        empty — which the builder answers with a synthesis that says so.
+    """
+    text = prompt_text(messages)
+    parser_health: dict[str, Any] = {}
+    statistics: dict[str, Any] = {}
+    timeline: list[dict[str, Any]] = []
+    error_summary: dict[str, Any] = {}
+    signatures: list[dict[str, Any]] = []
+    pattern_summary: dict[str, Any] = {}
+
+    headers = list(_PREPARE_OUTPUT_SECTION_PATTERN.finditer(text))
+    for index, header in enumerate(headers):
+        stop = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+        block = _decode_json_block(text, header.end(), stop)
+        section = header.group(1)
+
+        if section == "PARSER HEALTH" and isinstance(block, dict):
+            parser_health = block
+        elif section == "STATISTICS" and isinstance(block, dict):
+            statistics = block
+        elif section == "TIMELINE" and isinstance(block, list):
+            timeline.extend(event for event in block if isinstance(event, dict))
+        elif section == "ERROR ANALYSIS" and isinstance(block, dict):
+            error_summary = block
+        elif section == "ERROR ANALYSIS" and isinstance(block, list):
+            signatures.extend(row for row in block if isinstance(row, dict))
+        elif section == "PATTERN ANALYSIS" and isinstance(block, dict):
+            pattern_summary = block
+
+    return PrepareOutputInputs(
+        parser_health, statistics, timeline, error_summary, signatures, pattern_summary
+    )
+
+
+def _one_line(value: Any, limit: int = MAX_TEMPLATE_CHARS) -> str:
+    """Collapse a template or message to one bounded line, as a quote."""
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else f"{text[: limit - 1]}…"
+
+
+def _milestones(timeline: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index the timeline's milestones by kind, first occurrence winning.
+
+    The node emits at most one of each kind, so the tie-break never fires on a
+    real payload; it exists so a malformed prompt cannot change the answer.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    for event in timeline:
+        if event.get("event_type") != "milestone":
+            continue
+        kind = event.get("milestone_kind")
+        if isinstance(kind, str):
+            found.setdefault(kind, event)
+    return found
+
+
+def _primary_signature(inputs: PrepareOutputInputs) -> dict[str, Any] | None:
+    """The signature the error-analysis node nominated, if it is in the prompt.
+
+    Looked up by id rather than by position: the nomination and the batch are
+    rendered under separate headings, and matching them here is what makes the
+    root cause below traceable to the signature the node actually sent. A
+    nomination naming a signature that was trimmed out of the prompt resolves to
+    ``None``, which reads downstream as "the batch does not single one out".
+    """
+    primary_id = inputs.error_summary.get("primary_error_signature_id")
+    if not isinstance(primary_id, str) or not primary_id:
+        return None
+    for signature in inputs.signatures:
+        if signature.get("signature_id") == primary_id:
+            return signature
+    return None
+
+
+def _prepare_output_root_cause(inputs: PrepareOutputInputs) -> str:
+    """The one-sentence diagnosis, naming whatever the prompt let it name.
+
+    Three cases, in descending order of what the evidence supports, because the
+    node's own system prompt requires the third to be stated plainly rather than
+    guessed at: a nominated signature, a batch with no nomination, and no
+    signatures at all.
+    """
+    primary = _primary_signature(inputs)
+    if primary is not None:
+        loggers = [str(name) for name in (primary.get("loggers") or [])]
+        named = ", ".join(loggers[:MAX_NAMED_LOGGERS])
+        where = f" logged by {named}" if named else ""
+        first_seen = primary.get("first_seen")
+        when = f", first seen {first_seen}" if first_seen else ""
+        return (
+            f"Mock local model: {primary.get('signature_id')} "
+            f"({_one_line(primary.get('template'))}){where}{when}, is the "
+            f"signature the error analysis nominated, and it is carried through "
+            f"here as the trigger for the remaining "
+            f"{max(len(inputs.signatures) - 1, 0)} signature(s) in the batch."
+        )
+
+    if inputs.signatures:
+        leading = ", ".join(
+            str(signature.get("signature_id"))
+            for signature in inputs.signatures[:MAX_NAMED_SIGNATURES]
+        )
+        return (
+            f"Mock local model: no single trigger is singled out by the "
+            f"{len(inputs.signatures)} signature(s) in this batch, whose "
+            f"leading candidates by volume are {leading}."
+        )
+
+    return (
+        "Mock local model: no error signatures reached the synthesis, so no "
+        "trigger can be named for this investigation."
+    )
+
+
+def _prepare_output_sequence(inputs: PrepareOutputInputs) -> str:
+    """Paragraph one — what happened and when, from the timeline milestones."""
+    severity = inputs.statistics.get("severity")
+    severity = severity if isinstance(severity, dict) else {}
+    coverage = inputs.statistics.get("timestamp_coverage")
+    coverage = coverage if isinstance(coverage, dict) else {}
+    milestones = _milestones(inputs.timeline)
+    buckets = [
+        event for event in inputs.timeline if event.get("event_type") == "bucket"
+    ]
+
+    parts = [
+        "Mock local model: this synthesis restates the investigation it was "
+        "sent, in the order the node's own instructions ask for, and contains "
+        "no reasoning."
+    ]
+
+    if coverage.get("earliest") and coverage.get("latest"):
+        parts.append(
+            f"The window runs from {coverage['earliest']} to "
+            f"{coverage['latest']} and carries "
+            f"{_int(severity.get('error_count'))} error-level and "
+            f"{_int(severity.get('warning_count'))} warning-level record(s) "
+            f"across {len(_named_loggers(inputs.statistics))} named logger(s), "
+            f"placed into {len(buckets)} bucket(s)."
+        )
+    else:
+        parts.append(
+            f"No timestamp coverage was reported, so the "
+            f"{_int(severity.get('error_count'))} error-level record(s) in the "
+            f"payload cannot be placed on a time axis here."
+        )
+
+    narrative = [
+        (kind, milestones[kind].get("timestamp"))
+        for kind in _NARRATIVE_MILESTONES
+        if kind in milestones
+    ]
+    if narrative:
+        parts.append(
+            "The timeline marks "
+            + ", ".join(
+                f"{kind.replace('_', ' ')} at {timestamp}"
+                for kind, timestamp in narrative
+            )
+            + "."
+        )
+    else:
+        parts.append(
+            "The timeline carries no error milestones, so the payload records "
+            "no onset, peak or recovery."
+        )
+
+    return " ".join(parts)
+
+
+def _prepare_output_cascade(inputs: PrepareOutputInputs) -> str:
+    """Paragraph two — how the failure spread, from the errors and patterns."""
+    parts: list[str] = []
+
+    if inputs.signatures:
+        named = inputs.signatures[:MAX_NAMED_SIGNATURES]
+        parts.append(
+            f"The error analysis reported "
+            f"{_int(inputs.error_summary.get('unique_signatures_found'))} unique "
+            f"signature(s) over "
+            f"{_int(inputs.error_summary.get('total_errors_analyzed'))} error "
+            f"record(s); the prompt carried {len(inputs.signatures)} of them, led "
+            "by "
+            + ", ".join(
+                f"{signature.get('signature_id')} "
+                f"({_int(signature.get('count'))} occurrence(s))"
+                for signature in named
+            )
+            + "."
+        )
+        cascade = inputs.error_summary.get("cascading_impact_summary")
+        if cascade:
+            # Attributed rather than adopted: it is the error-analysis model's
+            # conclusion, and the node's system prompt asks this pass to keep
+            # the two apart rather than launder one into the other.
+            parts.append(
+                f"That node's own account of the cascade reads: "
+                f"{_one_line(cascade, 300)}"
+            )
+    else:
+        parts.append(
+            "No error signatures were carried in the prompt, so there is no "
+            "cascade to describe."
+        )
+
+    anomalies = inputs.pattern_summary.get("anomalies")
+    anomalies = anomalies if isinstance(anomalies, list) else []
+    correlations = inputs.pattern_summary.get("cross_logger_correlations")
+    correlations = correlations if isinstance(correlations, list) else []
+    if anomalies or correlations:
+        categories = sorted(
+            {
+                str(anomaly.get("category"))
+                for anomaly in anomalies
+                if isinstance(anomaly, dict) and anomaly.get("category")
+            }
+        )
+        parts.append(
+            f"The pattern analysis contributed {len(anomalies)} anomaly/anomalies"
+            + (f" ({', '.join(categories)})" if categories else "")
+            + f" and {len(correlations)} cross-logger correlation(s), which are "
+            "that model's conclusions rather than measurements."
+        )
+    else:
+        parts.append(
+            "The pattern analysis reported no anomalies, so nothing corroborates "
+            "the cascade from the behavioral side."
+        )
+
+    return " ".join(parts)
+
+
+def _prepare_output_caveat(inputs: PrepareOutputInputs) -> str:
+    """Paragraph three — what limits the conclusion, from PARSER HEALTH.
+
+    The section the node adds to this prompt and to no other, and the reason
+    :data:`PROMPT_MARKERS` can route on it. Stating the caveat is a hard
+    requirement of the node's system prompt, so the mock states it even when
+    there is nothing to caveat — an unqualified summary would be the one part of
+    a local run that does not look like what a real provider returns.
+    """
+    if not inputs.parser_health:
+        return (
+            "Mock local model: no parser metrics reached this pass, so how much "
+            "of the payload was readable is unknown and the conclusion above is "
+            "unqualified."
+        )
+
+    total = _int(inputs.parser_health.get("total_lines"))
+    parsed = _int(inputs.parser_health.get("parsed_lines"))
+    malformed = _int(inputs.parser_health.get("malformed_lines"))
+    missing = _int(inputs.parser_health.get("missing_timestamp_lines"))
+
+    parts = [
+        f"Mock local model: of {total} line(s) the parser read {parsed} and "
+        f"skipped {malformed} as malformed and "
+        f"{_int(inputs.parser_health.get('blank_lines'))} as blank, using "
+        f"{inputs.parser_health.get('parser_name')} on a detected "
+        f"{inputs.parser_health.get('detected_format')} format at confidence "
+        f"{inputs.parser_health.get('parser_confidence')}."
+    ]
+
+    if malformed and total:
+        parts.append(
+            f"The {malformed} malformed line(s) — {malformed / total:.1%} of the "
+            "payload — reached no distribution, no bucket and no signature, so "
+            "the conclusion above is drawn from the remainder."
+        )
+    if missing and parsed:
+        parts.append(
+            f"{missing} parsed entry/entries ({missing / parsed:.1%}) carried no "
+            "timestamp and are therefore absent from the timeline, though they "
+            "did reach the statistics and the error fingerprinting."
+        )
+    if not malformed and not missing:
+        parts.append(
+            "Every non-blank line parsed and every entry carried a timestamp, so "
+            "no data-quality caveat qualifies this conclusion."
+        )
+
+    return " ".join(parts)
+
+
+def _prepare_output_confidence(inputs: PrepareOutputInputs) -> int:
+    """Rate how clearly this evidence points at one cause, on the mock's scale.
+
+    Deliberately blind to parser health — see the constants for why. Every
+    component is a yes/no question about corroboration, so the number is
+    reproducible from the prompt and explainable from it.
+    """
+    score = CONFIDENCE_BASE
+    if _primary_signature(inputs) is not None:
+        score += CONFIDENCE_PRIMARY_SIGNATURE_BONUS
+    milestones = _milestones(inputs.timeline)
+    if any(kind in milestones for kind in _NARRATIVE_MILESTONES):
+        score += CONFIDENCE_MILESTONE_BONUS
+    if inputs.pattern_summary.get("anomalies"):
+        score += CONFIDENCE_PATTERN_BONUS
+    return max(0, min(100, score))
+
+
+def build_prepare_output_payload(inputs: PrepareOutputInputs) -> dict[str, Any]:
+    """Build a response body matching the synthesis schema.
+
+    That schema is
+    :class:`~graph_library.models.prepare_output.LLMPrepareOutputResult`, the
+    only one this server answers that is not re-exported from
+    ``graph_library.models`` — the node imports it from its own module.
+
+    All three fields are required by that schema, so none of them may be empty:
+    unlike the other schemas this server answers, a thin answer here is a
+    ``ValidationError`` and the node's guard turns it into a degraded report.
+    The summary is three paragraphs in the order the node's system prompt
+    requires — what happened and when, how the failure spread, and what limits
+    the conclusion — so that a local run exercises the same shape a provider
+    would return.
+
+    Args:
+        inputs: The five reports decoded back out of the synthesis prompt.
+
+    Returns:
+        A plain dict with the schema's three fields; the caller serializes it.
+        Empty inputs give a synthesis that says the investigation was empty,
+        which is a valid answer rather than a degraded one.
+    """
+    return {
+        "root_cause": _prepare_output_root_cause(inputs),
+        "executive_summary": "\n\n".join(
+            (
+                _prepare_output_sequence(inputs),
+                _prepare_output_cascade(inputs),
+                _prepare_output_caveat(inputs),
+            )
+        ),
+        "llm_confidence_score": _prepare_output_confidence(inputs),
+    }
+
+
 def resolve_tool_name(body: dict[str, Any]) -> str | None:
     """Return the tool the request asked to be called, if it sent any.
 
@@ -708,6 +1170,13 @@ def _pattern_analysis_response(body: dict[str, Any]) -> dict[str, Any]:
     return build_pattern_payload(*extract_pattern_inputs(body.get("messages") or []))
 
 
+def _prepare_output_response(body: dict[str, Any]) -> dict[str, Any]:
+    """Answer the synthesis pass from the five reports embedded in the prompt."""
+    return build_prepare_output_payload(
+        extract_prepare_output_inputs(body.get("messages") or [])
+    )
+
+
 #: One builder per schema this server answers, keyed by the name the client puts
 #: on the wire. Adding an LLM node means adding a row here — the alternative is
 #: the node receiving another node's payload, which its schema may well accept.
@@ -715,23 +1184,39 @@ PAYLOAD_BUILDERS: dict[str, Any] = {
     "LLMErrorAnalysisResult": _error_analysis_response,
     "LLMSearchDecision": _search_decision_response,
     "PatternAnalysisResult": _pattern_analysis_response,
+    "LLMPrepareOutputResult": _prepare_output_response,
 }
 
 #: A top-level field that belongs to exactly one of the schemas above, used to
 #: route a request whose schema was bound under some other name. Ordered, and
 #: checked in order, so a future overlap resolves predictably rather than by
 #: dict iteration.
+#:
+#: ``llm_confidence_score`` rather than ``executive_summary`` for the synthesis
+#: schema: both are unique to it today, but the first is unique to it by
+#: construction — it is named for the pass that produces it — where a second
+#: schema growing an ``executive_summary`` is entirely plausible.
 SCHEMA_MARKER_FIELDS: tuple[tuple[str, str], ...] = (
     ("evaluations", "LLMErrorAnalysisResult"),
     ("anomalies", "PatternAnalysisResult"),
     ("queries", "LLMSearchDecision"),
+    ("llm_confidence_score", "LLMPrepareOutputResult"),
 )
 
-#: A phrase that appears in exactly one of the three prompts, for the last-ditch
+#: A phrase that appears in exactly one of the four prompts, for the last-ditch
 #: case where the request declares no schema at all. Deliberately short and
 #: structural — a heading and a closing instruction — rather than a long
 #: quotation that would rot the first time a prompt is reworded.
+#:
+#: **Order is load-bearing here, unlike in the tables above.** The
+#: prepare-output prompt reuses the pattern-analysis formatters, so it carries
+#: the STATISTICS heading too and would resolve to ``PatternAnalysisResult`` if
+#: that row were reached first — the exact misroute this row exists to prevent.
+#: PARSER HEALTH is the section only the synthesis prompt has, and the anchoring
+#: newlines are what distinguish the heading from the system prompt's bulleted
+#: gloss of the same name.
 PROMPT_MARKERS: tuple[tuple[str, str], ...] = (
+    ("\nPARSER HEALTH\n", "LLMPrepareOutputResult"),
     ("\nSTATISTICS\n", "PatternAnalysisResult"),
     ("return the queries you would run", "LLMSearchDecision"),
 )
