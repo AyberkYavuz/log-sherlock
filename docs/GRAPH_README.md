@@ -1,7 +1,7 @@
 # LogSherlock Graph Nodes
 
-LogSherlock is a log analysis platform built as a LangGraph workflow. This
-document describes the nodes of that graph that are **fully implemented today**:
+LogSherlock is a log analysis platform built as a LangGraph workflow. Every node
+of that graph is **fully implemented today**:
 
 - **Parser** — turns raw log text into normalized entries
 - **Statistics** — reports what the parsed dataset contains
@@ -10,9 +10,11 @@ document describes the nodes of that graph that are **fully implemented today**:
 - **Error Analysis** — groups the errors and explains which one started it
 - **Web Search** — optionally fetches external documentation for obscure errors
 - **Prepare Output** — fans every finding in, scores it, and serializes the report
+- **Write to DB** — persists that report to PostgreSQL
 
-Each node is described from its Python source. `write_to_db` is the one node
-still stubbed in `graph.py` and is deliberately not documented here.
+Each node is described from its Python source. `graph.py` now defines no node of
+its own: every stage lives in its own feature package under `graph_library/` and
+is registered there.
 
 ---
 
@@ -963,23 +965,298 @@ degrades, because swapping the model would burn another request and fail the sam
 way. A substitution is always recorded in `investigation_notes`, since a silent
 one would make the report unreproducible.
 
-### Known limitation — `write_to_db` overwrites the report
+### The report survives to the final state
 
-The `write_to_db` node is still a stub in `graph.py` and returns
-`"structured_report": {}`. It runs immediately after this node, the field has no
-reducer, and the later write wins — so **the final state's `structured_report` is
-an empty dict** even though this node published a complete one. `root_cause`,
-`executive_summary` and `confidence_score` are unaffected and do survive to the
-final state.
+Worth stating because it was once not true. The `write_to_db` stub that
+preceded the implemented node returned `"structured_report": {}`; it ran
+immediately after this node, the field has no reducer, and the later write won,
+so the final state's report was an empty dict even though this node had
+published a complete one.
 
-Until that node is implemented, observe the report through per-node updates
-rather than the final state:
+The implemented node returns only the three fields it owns — `db_persisted`,
+its investigation note and its `completed_stages` entry — so the report now
+reaches the final state intact:
+
+```python
+report = compile_graph().invoke(inputs)["structured_report"]
+```
+
+Per-node streaming still works and is still the way to observe *when* the report
+was assembled rather than merely what it contains:
 
 ```python
 for update in compile_graph().stream(inputs, stream_mode="updates"):
     if "prepare_output" in update:
         report = update["prepare_output"]["structured_report"]
 ```
+
+---
+
+## Write to DB Node
+
+**Module:** `graph_library/write_to_db/node.py` · **Entry point:** `write_to_db_node(state)`
+
+The last node in the topology and the only one that leaves the process. It takes
+the `structured_report` the Prepare Output node assembled and writes it to a
+PostgreSQL `investigations` table, keyed by `investigation_id`.
+
+**Reads:** `structured_report`, `investigation_id`, and `application_name`,
+`confidence_score`, `analysis_mode`, `llm_provider` as fallbacks
+**Writes:** `db_persisted`, `investigation_notes`, `completed_stages`
+
+It contributes no analysis and publishes none. Three fields leave it, and the
+absence of a fourth is deliberate: it does not return `structured_report`. A
+node that does not own a field must not return it — see
+[The report survives to the final state](#the-report-survives-to-the-final-state).
+
+### Package layout
+
+The feature package is split the way its siblings are, by concern:
+
+- `config.py` — `DatabaseConfig`, read from the environment
+- `queries.py` — every SQL statement, in one reviewable place
+- `db.py` — connection handling and the two operations built on it
+- `node.py` — the graph node
+
+Two consumers share that surface, which is why the operations are functions in
+`db.py` rather than methods on the node: `graph.py` imports `write_to_db_node`,
+and the root `init_db.py` imports `initialize_database` and `DatabaseConfig`. The
+schema is therefore declared once and the script that creates the table cannot
+drift from the node that writes to it.
+
+`psycopg2` is imported **lazily**, inside the functions that use it. This package
+is reachable from `graph.py` through the node registry, so a module-scope import
+would make the driver a hard requirement of *building* the graph: a deployment
+that never persists anything would fail to start rather than simply never call
+this node.
+
+### Connection settings
+
+Credentials come from the environment and never from graph state, for the same
+reason the LLM provider keys do — a value that lives in state can end up in a
+checkpoint, a LangSmith trace or a persisted report. Six variables, each with a
+default applied when it is absent *or empty*, so a half-filled `.env` behaves
+like a missing one:
+
+- `DB_HOST` — defaults to `localhost`
+- `DB_PORT` — defaults to `5432`
+- `DB_NAME` — defaults to `postgres`
+- `DB_USER` — defaults to `postgres`
+- `DB_PASSWORD` — no default; an empty password is *omitted* from the connection
+  parameters rather than sent as `""`, because the two are not the same to libpq
+  and a blank one is rejected by a trust-authenticated server
+- `DB_CONNECT_TIMEOUT` — defaults to `5` seconds, short on purpose: this node
+  runs at the end of a graph run, so an unreachable database must degrade in
+  seconds rather than hang a run that has already produced its whole report
+
+The node does **not** load `.env` itself, and that is a correctness requirement
+rather than a style choice. `load_dotenv` mutates `os.environ` for the whole
+process, so a node calling it would inject every key in the file — provider
+credentials, `LANGSMITH_TRACING` — into a process that had deliberately not set
+them. Under a test suite that is the difference between a hermetic run and one
+that makes real, billed API calls from the next node that looks for a key.
+Populating the environment belongs to the entry point: `langgraph.json` does it
+with `"env": ".env"`, and `init_db.py` calls `load_env_file()` explicitly.
+
+### The `investigations` table
+
+Created by `init_db.py`, never by the node. A node that issued DDL would need
+elevated privileges on every run, and a typo in a report would become a schema
+migration.
+
+```sql
+CREATE TABLE IF NOT EXISTS investigations (
+    investigation_id  VARCHAR(255) PRIMARY KEY,
+    application_name  VARCHAR(255),
+    confidence_score  INTEGER,
+    analysis_mode     VARCHAR(50),
+    llm_provider      VARCHAR(50),
+    structured_report JSONB,
+    created_at        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Three choices in that schema are load-bearing:
+
+- **`investigation_id` is the caller's identifier, not a generated surrogate
+  key.** That is what makes the write idempotent: re-running an investigation
+  under the same id corrects the stored row rather than accumulating a second
+  one.
+- **`structured_report` is `JSONB`, not `JSON`.** It is queried far more than it
+  is round-tripped, and only `JSONB` can be indexed. A stored report answers
+  `#>> '{synthesis,root_cause}'` or `jsonb_array_length(... #> '{deterministic_outputs,timeline}')`
+  in place, without being deserialized first.
+- **The four columns beside it duplicate values that also live inside that
+  document.** They are what a dashboard filters and sorts on, and neither copy
+  is authoritative over the other because both are written from the same report
+  in one statement.
+
+`confidence_score` is stored as SQL `NULL` rather than `0` when a run produced
+none, so "not measured" and "measured as zero" stay distinguishable.
+
+### `investigation_id` — supplied or generated
+
+The id is **optional**. When the caller supplies none — absent, `null`, empty or
+whitespace — the node generates one in the form `inv-graph-<8 hex chars>` from
+`uuid.uuid4()`, and records the fact in `investigation_notes`:
+
+> Write to DB: no investigation_id was supplied, so `inv-graph-3f9a2c41` was
+> generated for this run. Supply an id in the input state to make re-runs update
+> the same row instead of storing a new one.
+
+The run then persists normally and returns `db_persisted: True`. Generating
+rather than refusing is what makes persistence the default: a LangGraph Studio
+run has no natural place to type a primary key, and a complete investigation
+that goes unstored because of that is the worse outcome.
+
+The trade-off is real and is the reason the note exists. **A generated id is not
+idempotent across runs** — re-running the same logs mints a new key and stores a
+second row, where a caller-supplied id would have corrected the first. The
+`inv-graph-` prefix is visible on purpose, so an operator reading a stored row
+can tell a key their system chose (and can therefore correlate with something)
+from one this run invented (which correlates with nothing outside the table).
+
+An id the caller *did* supply is never replaced. One longer than 255 characters
+is reported as the input problem it is and the run is not persisted, rather than
+being silently truncated or swapped for a generated one.
+
+### The write
+
+One idempotent statement rather than a select-then-branch, which would have a
+race between two graph runs finishing at once and would be three round trips
+where this is one:
+
+```sql
+INSERT INTO investigations (
+    investigation_id, application_name, confidence_score,
+    analysis_mode, llm_provider, structured_report, updated_at
+)
+VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+ON CONFLICT (investigation_id) DO UPDATE SET
+    application_name  = EXCLUDED.application_name,
+    confidence_score  = EXCLUDED.confidence_score,
+    analysis_mode     = EXCLUDED.analysis_mode,
+    llm_provider      = EXCLUDED.llm_provider,
+    structured_report = EXCLUDED.structured_report,
+    updated_at        = CURRENT_TIMESTAMP;
+```
+
+`created_at` appears in neither half by design: it keeps its column default on
+the first write and is untouched by every later one, so the row remembers when
+the investigation was first stored even after it is re-run. `updated_at` is set
+from `CURRENT_TIMESTAMP` in the update branch rather than from
+`EXCLUDED.updated_at`, so the stored time is the server's and not one derived
+from whatever clock the graph ran on.
+
+The four relational values are looked up in `structured_report["metadata"]`
+first, then `structured_report["synthesis"]`, then the top level of graph state.
+Metadata is where Prepare Output records the run's identity and holds the
+*normalized* provider and mode — `anthropic` where the caller typed `Claude` —
+which is what makes the stored row a reproducibility record rather than a
+transcript of the form.
+
+### Execution visibility
+
+Progress is written to the logger *and* to stdout with a `[LogSherlock DB]`
+prefix, because LangGraph Server and the CLI show a node's stdout directly and a
+persistence step that reports nothing there looks identical to one that never
+ran:
+
+```
+[LogSherlock DB] Connecting to Postgres at localhost:5432/postgres as postgres...
+[LogSherlock DB] Successfully persisted investigation inv-graph-3f9a2c41
+```
+
+The password has no representation in any of those lines. The log target is
+built from a `host:port/dbname` property that cannot carry a credential, rather
+than from a DSN with one substitution away from leaking.
+
+### Degradation
+
+The node degrades rather than fails, and the bar is higher here than anywhere
+else in the graph. Every other node degrades to protect the run; this one
+degrades to protect a run that is already *complete*. By the time it executes,
+the payload has been parsed, analyzed, synthesized and scored, so an unreachable
+database must cost the storage and nothing else.
+
+Every failure path returns the same shape as the happy one, with
+`db_persisted: False` and the reason in `investigation_notes`. Nothing raises out
+of `write_to_db_node`. The paths are:
+
+- **No `structured_report`** — nothing to store; caught before the driver is
+  imported and before a socket is opened, so a run with nothing to persist does
+  not spend a connection discovering that.
+- **A supplied `investigation_id` over 255 characters** — checked locally rather
+  than left to the server, so it reads as an input problem and not as a write
+  that failed halfway.
+- **An unreachable server, a rejected credential, a missing database, a missing
+  driver** — caught, logged with a full traceback, and summarized in one line.
+  The driver's message is collapsed to a single bounded line for the note, since
+  `psycopg2` reports a refused connection over four lines and an investigation
+  note is read by a human.
+
+`completed_stages` gains `"write_to_db"` on **every** path, including the failure
+paths. The channel records which stages ran, not which succeeded — the note and
+the `db_persisted` flag are what carry the outcome — and a node that omitted
+itself on failure would make a degraded run indistinguishable from a truncated
+one.
+
+### Database initialization — `init_db.py`
+
+A root-level script, run once before a session of investigations, in either
+deployment:
+
+```bash
+python3 init_db.py
+```
+
+Local development reads `.env`; a Docker Compose deployment sets the same `DB_*`
+variables in the service environment and needs no file. One code path serves
+both, because the only difference between them is what the values are.
+
+In one connection it loads `.env` if there is one, connects, **truncates** the
+`investigations` table if it exists, and **creates** it if it does not.
+Create-or-truncate rather than drop-and-recreate: truncating leaves the column
+types, the primary key and any index or grant a deployment has added exactly as
+they were, where a drop would discard all of them silently and replace the table
+with whatever the current release happens to declare.
+
+**The script empties the table.** That is its purpose, but it means it is not
+something to point at a database whose contents matter. It reports the target
+and what it did on every run, so a mistake is visible in the output:
+
+```
+Target: localhost:5432/postgres (user postgres)
+[LogSherlock DB] Connecting to Postgres at localhost:5432/postgres as postgres...
+[LogSherlock DB] Table 'investigations' not found; creating it
+
+OK: table 'investigations' created on localhost:5432/postgres
+```
+
+Exit codes are distinct because the fixes are: `0` success, `1` a connection or
+statement failure (a deployment problem), `2` a missing driver (an install
+problem, reported with the `pip install psycopg2-binary` command). Failures print
+an actionable sentence rather than a traceback whose last frame is inside the
+driver.
+
+### A note on running the test suite
+
+The suite runs the full graph end to end several times without supplying an
+`investigation_id`. With a reachable PostgreSQL, each of those runs now generates
+an id and stores a real row — roughly 17 per `pytest` invocation. That is the
+auto-generation behaviour working as designed, not a fault, but it does mean the
+suite writes to whatever database `DB_*` points at.
+
+Point the tests somewhere harmless if that matters:
+
+```bash
+DB_HOST=127.0.0.1 DB_PORT=1 python3 -m pytest -q
+```
+
+Every write then fails fast, each run records its degradation note, and the
+assertions are unaffected — they check that `write_to_db` ran, not that it
+stored anything.
 
 ---
 
