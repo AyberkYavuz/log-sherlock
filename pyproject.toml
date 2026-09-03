@@ -60,7 +60,13 @@ dev = [
 # The graph is a top-level module, not a package, because langgraph.json points
 # at "./graph.py:compile_graph". init_db.py is a standalone script and is listed
 # so an installed copy carries it too.
+#
+# backend.py is deliberately NOT listed. It is a repository-root runner for
+# `python3 backend.py`, and it shares its name with the backend package below —
+# installing both would put a module and a package called `backend` in the same
+# site-packages directory, where the package always wins the import. The script
+# is only ever executed, never imported, so it does not need to ship.
 py-modules = ["graph", "init_db"]
 
 [tool.setuptools.packages.find]
-include = ["graph_library*"]
+include = ["graph_library*", "backend*"]
