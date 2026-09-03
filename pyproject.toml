@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "log-sherlock"
+version = "0.1.0"
+description = "A multi-agent log analysis graph built on LangGraph."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+
+# Core runtime. Lower bounds rather than pins: this is an application installed
+# from source into one environment, not a library resolved against other
+# people's constraints, and a pin here would force a manual edit for every
+# security patch. The bounds are the versions the graph is developed and tested
+# against.
+dependencies = [
+    # The graph runtime itself.
+    "langgraph>=1.2",
+    # Response schemas for every LLM node, and the tool-argument envelope they
+    # inherit. Pydantic v2 specifically — the ``model_validator(mode="before")``
+    # in ``graph_library/models/base.py`` is v2 API.
+    "pydantic>=2.13",
+    # PostgreSQL driver for the write_to_db node and init_db.py. The ``-binary``
+    # wheel rather than plain ``psycopg2`` so no local libpq or compiler is
+    # needed; a deployment that prefers building against the system libpq can
+    # swap it without any code change, since nothing imports the distribution
+    # name.
+    "psycopg2-binary>=2.9",
+    # Reads .env at the entry points — init_db.py and langgraph.json's
+    # "env": ".env". Deliberately not called from inside any node; see the
+    # comment in graph_library/write_to_db/node.py for why.
+    "python-dotenv>=1.0",
+    # Serve the mock OpenAI-compatible LLM in tests/mock_local_llm.py, which is
+    # a runtime dependency rather than a test one: it is how the ``local``
+    # provider is exercised from LangGraph Studio, not only from pytest.
+    "fastapi>=0.116",
+    "uvicorn>=0.35",
+]
+
+[project.optional-dependencies]
+# LLM providers. Each is imported lazily by
+# graph_library/error_analysis/llm_factory.py, so a deployment installs only
+# the vendors it actually calls — that laziness is the whole reason these are
+# not in the core list.
+openai = ["langchain-openai>=1.3"]
+anthropic = ["langchain-anthropic>=1.5"]
+gemini = ["google-genai>=2.18"]
+# Optional web-search detour for the error-analysis node, off by default.
+search = ["tavily-python>=0.5"]
+# Everything needed to run the suite and the deterministic aggregations.
+dev = [
+    "pytest>=9.1",
+    "pandas>=3.0",
+    "httpx>=0.28",
+]
+
+[tool.setuptools]
+# The graph is a top-level module, not a package, because langgraph.json points
+# at "./graph.py:compile_graph". init_db.py is a standalone script and is listed
+# so an installed copy carries it too.
+py-modules = ["graph", "init_db"]
+
+[tool.setuptools.packages.find]
+include = ["graph_library*"]
