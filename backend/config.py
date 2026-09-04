@@ -58,7 +58,7 @@ DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
 #: Note this is the *keep-alive* budget, not a request deadline: uvicorn imposes
 #: no ceiling on how long a handler may run, which is exactly what a
 #: minutes-long graph invocation needs.
-DEFAULT_KEEP_ALIVE_TIMEOUT = 75
+DEFAULT_KEEP_ALIVE_TIMEOUT = 300
 
 #: How long the graph may run before the API gives up on it. Generous because
 #: the payload size is the caller's choice and a 4 MB corpus legitimately takes
