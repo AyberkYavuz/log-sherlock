@@ -51,6 +51,20 @@ export interface InvestigateRequest {
   llm_provider?: LLMProvider
   /** Opt in to the error-analysis web-search detour. Off by default. */
   enable_web_search?: boolean
+  /**
+   * The key this run is stored under. Optional; ≤ 255 characters.
+   *
+   * Omit it and the backend mints `inv-graph-<4 hex chars>`, reporting the
+   * result in the response. Supply one and it is never replaced — which is what
+   * makes a re-run *correct* the stored row instead of adding a second one,
+   * because the graph's write is an upsert keyed on this value.
+   *
+   * That same upsert is why a supplied id is the durable choice: the generated
+   * form has a 65,536-value keyspace, so at a few hundred stored records a
+   * collision becomes likely, and a collision overwrites the earlier
+   * investigation rather than failing.
+   */
+  investigation_id?: string
 }
 
 /**
