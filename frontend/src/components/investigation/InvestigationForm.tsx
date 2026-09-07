@@ -14,9 +14,15 @@
  * come back complete-looking with its interpretation silently missing; the
  * notes are the sole evidence of that, so they are shown rather than hidden
  * behind a toggle.
+ *
+ * Logs reach `raw_logs` three ways — a dropped file, a picked file, or typing —
+ * and all three write the same state, because the API takes log *text* and has
+ * no notion of a file. A file is a convenience for getting text into the box,
+ * not a second kind of input, so nothing downstream of this component can tell
+ * which route was used.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { useRunInvestigation } from '../../hooks/useRunInvestigation'
 import { ErrorEnvelope } from '../common/ErrorEnvelope'
@@ -40,6 +46,44 @@ const PROVIDERS: { value: LLMProvider; label: string }[] = [
 
 /** The column width of the `application_name` column, enforced server-side. */
 const MAX_APPLICATION_NAME = 255
+
+/**
+ * Extensions the picker offers and a drop is checked against.
+ *
+ * Matched on the extension rather than on `File.type`, because the browser
+ * reports `""` for `.log` on every platform and `application/json` only
+ * sometimes for `.json` — a MIME check would reject the project's own
+ * `sample_logs/*.log` fixtures, which are the files most likely to be dropped
+ * here.
+ */
+const ACCEPTED_EXTENSIONS = ['.txt', '.json', '.log'] as const
+
+/** The `accept` attribute, and the hint shown under the drop zone. */
+const ACCEPT_ATTRIBUTE = ACCEPTED_EXTENSIONS.join(',')
+
+/**
+ * Refused above this size, in bytes.
+ *
+ * The backend imposes no ceiling and the graph genuinely handles multi-megabyte
+ * corpora, so this guards the *browser*: the text lands in React state and in a
+ * controlled `<textarea>`, which repaints the whole value on every keystroke. A
+ * 4 MB fixture pasted into a textarea makes the tab unusable long before the
+ * request is ever sent. Files above this are rejected with their real size,
+ * pointing at the API for the full-corpus case rather than pretending the limit
+ * is the pipeline's.
+ */
+const MAX_FILE_BYTES = 8 * 1024 * 1024
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function hasAcceptedExtension(name: string): boolean {
+  const lower = name.toLowerCase()
+  return ACCEPTED_EXTENSIONS.some((extension) => lower.endsWith(extension))
+}
 
 /**
  * Four Pino JSON lines carrying one ERROR, so a first run produces a real
@@ -79,6 +123,152 @@ function FieldLabel({
         {children}
       </label>
       {hint && <span className="text-xs text-severity-muted">{hint}</span>}
+    </div>
+  )
+}
+
+/** What a successfully read file left behind, for the confirmation line. */
+interface LoadedFile {
+  name: string
+  bytes: number
+}
+
+/**
+ * The drop zone and file picker, which are one control with two triggers.
+ *
+ * `dragDepth` is a counter rather than a boolean because `dragenter` and
+ * `dragleave` both fire when the pointer crosses into a *child* element, so a
+ * boolean flickers off as the cursor moves over the label inside the zone. The
+ * counter only reaches zero when the pointer has genuinely left.
+ *
+ * `onDragOver` must call `preventDefault` on every event, not just once: it is
+ * what marks the element a drop target, and without it the browser navigates
+ * away to the dropped file and discards everything typed into the form.
+ */
+function LogFileDropZone({
+  onFileText,
+  onError,
+  disabled,
+}: {
+  onFileText: (text: string, file: LoadedFile) => void
+  onError: (message: string) => void
+  disabled: boolean
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dragDepth, setDragDepth] = useState(0)
+  const [reading, setReading] = useState(false)
+
+  const active = dragDepth > 0
+
+  const readFile = async (file: File) => {
+    if (!hasAcceptedExtension(file.name)) {
+      onError(
+        `${file.name} is not a supported log file. Accepted extensions are ` +
+          `${ACCEPTED_EXTENSIONS.join(', ')}.`,
+      )
+      return
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      onError(
+        `${file.name} is ${formatBytes(file.size)}, above the ` +
+          `${formatBytes(MAX_FILE_BYTES)} the editor can hold. Post it to ` +
+          'POST /api/investigate directly for a full-corpus run.',
+      )
+      return
+    }
+    if (file.size === 0) {
+      onError(`${file.name} is empty, so there is nothing to analyse.`)
+      return
+    }
+
+    setReading(true)
+    try {
+      // `File.text()` decodes as UTF-8, which is what every fixture in
+      // `sample_logs/` is. A file in another encoding still loads; its
+      // non-ASCII bytes become replacement characters, and the parser treats
+      // them as message text like any other character.
+      const text = await file.text()
+      onFileText(text, { name: file.name, bytes: file.size })
+    } catch (cause) {
+      onError(
+        `${file.name} could not be read ` +
+          `(${cause instanceof Error ? cause.message : String(cause)}).`,
+      )
+    } finally {
+      setReading(false)
+    }
+  }
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault()
+    setDragDepth(0)
+    if (disabled) return
+    // Only the first file: `raw_logs` is one payload, and silently
+    // concatenating several would interleave unrelated ecosystems and make the
+    // parser's format detection pick whichever won the sample.
+    const file = event.dataTransfer.files?.[0]
+    if (file) void readFile(file)
+  }
+
+  return (
+    <div>
+      <div
+        onDragEnter={(event) => {
+          event.preventDefault()
+          setDragDepth((depth) => depth + 1)
+        }}
+        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={(event) => {
+          event.preventDefault()
+          setDragDepth((depth) => Math.max(0, depth - 1))
+        }}
+        onDrop={handleDrop}
+        className={`rounded-lg border border-dashed px-4 py-5 text-center transition-colors ${
+          active
+            ? 'border-brand-purple bg-brand-purple/10'
+            : 'border-obsidian-800 bg-obsidian-950/60'
+        }`}
+      >
+        <input
+          ref={inputRef}
+          id="log_file"
+          type="file"
+          accept={ACCEPT_ATTRIBUTE}
+          disabled={disabled}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) void readFile(file)
+            // Cleared so picking the same file twice fires `change` again —
+            // the value is unchanged otherwise and the second pick is a no-op.
+            event.target.value = ''
+          }}
+          className="sr-only"
+        />
+        <p className="text-sm text-slate-200">
+          {reading ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner className="h-3.5 w-3.5 text-severity-info" />
+              Reading file…
+            </span>
+          ) : (
+            <>
+              Drop a log file here, or{' '}
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                disabled={disabled}
+                className="font-medium text-brand-purple underline-offset-2 transition-colors hover:text-brand-violet hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                browse
+              </button>
+            </>
+          )}
+        </p>
+        <p className="mt-1 text-xs text-severity-muted">
+          {ACCEPTED_EXTENSIONS.join(', ')} · up to{' '}
+          {formatBytes(MAX_FILE_BYTES)}
+        </p>
+      </div>
     </div>
   )
 }
@@ -152,6 +342,11 @@ export function InvestigationForm({
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('standard')
   const [provider, setProvider] = useState<LLMProvider>('local')
   const [enableWebSearch, setEnableWebSearch] = useState(false)
+  // Which file the current text came from, and why the last one did not load.
+  // Both are cleared as soon as the text is edited by any other route, because
+  // "loaded incident.log" stops being true the moment the box is retyped.
+  const [loadedFile, setLoadedFile] = useState<LoadedFile | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
 
   const run = useRunInvestigation()
 
@@ -162,6 +357,27 @@ export function InvestigationForm({
   const canSubmit = !!trimmedName && !!trimmedLogs && !run.loading
 
   const lineCount = rawLogs ? rawLogs.split('\n').length : 0
+
+  /** Adopt file text as the payload, replacing whatever was in the box. */
+  const handleFileText = (text: string, file: LoadedFile) => {
+    setRawLogs(text)
+    setLoadedFile(file)
+    setFileError(null)
+  }
+
+  /**
+   * Typing, pasting or inserting the sample all take this path.
+   *
+   * Dropping the `loadedFile` attribution here is the point: the line count and
+   * character count below are derived from `rawLogs` and stay correct on their
+   * own, but a filename is a claim about provenance and goes stale the instant
+   * the text is edited.
+   */
+  const handleRawLogsChange = (text: string) => {
+    setRawLogs(text)
+    setLoadedFile(null)
+    setFileError(null)
+  }
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -220,10 +436,46 @@ export function InvestigationForm({
           >
             Raw logs
           </FieldLabel>
+
+          <div className="mb-2 space-y-2">
+            <LogFileDropZone
+              onFileText={handleFileText}
+              onError={(message) => {
+                setFileError(message)
+                setLoadedFile(null)
+              }}
+              disabled={run.loading}
+            />
+
+            {fileError && (
+              <p
+                role="alert"
+                className="rounded-lg border border-severity-error/40 bg-severity-error/10 px-3 py-2 text-xs text-severity-error"
+              >
+                {fileError}
+              </p>
+            )}
+
+            {loadedFile && (
+              <p className="flex flex-wrap items-center gap-2 rounded-lg border border-severity-success/40 bg-severity-success/10 px-3 py-2 text-xs text-severity-success">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-severity-success" />
+                Loaded <code className="font-mono">{loadedFile.name}</code> ·{' '}
+                {formatBytes(loadedFile.bytes)}
+                <button
+                  type="button"
+                  onClick={() => handleRawLogsChange('')}
+                  className="ml-auto font-medium text-severity-muted transition-colors hover:text-slate-200"
+                >
+                  Clear
+                </button>
+              </p>
+            )}
+          </div>
+
           <textarea
             id="raw_logs"
             value={rawLogs}
-            onChange={(event) => setRawLogs(event.target.value)}
+            onChange={(event) => handleRawLogsChange(event.target.value)}
             rows={12}
             spellCheck={false}
             // Log lines are long and are meant to be read one per row, so they
@@ -236,7 +488,7 @@ export function InvestigationForm({
           />
           <button
             type="button"
-            onClick={() => setRawLogs(SAMPLE_LOGS)}
+            onClick={() => handleRawLogsChange(SAMPLE_LOGS)}
             className="mt-1.5 text-xs text-brand-purple transition-colors hover:text-brand-violet"
           >
             Insert sample logs
