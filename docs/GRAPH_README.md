@@ -1368,15 +1368,21 @@ See [Expected results](#expected-results) for what a healthy run looks like and
 ### 1. Verify `.env` settings
 
 ```bash
-LOCAL_LLM_BASE_URL=http://127.0.0.1:8080/v1
+LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1
 LOCAL_LLM_MODEL_NAME=mock-local-llm
 LOCAL_LLM_API_KEY=cant-be-empty
 ```
 
+Port `8000` is `llm_factory.DEFAULT_LOCAL_BASE_URL`, so the value above is what
+the graph would use even with the variable unset. Setting it to anything else
+means every terminal, the `.env` and this document have to agree, and the cost
+of them not agreeing is the failure described next.
+
 The port in `LOCAL_LLM_BASE_URL` must match the port the server is started on in
-step 2. A mismatch fails as `openai.APIConnectionError: Connection error` from
-every LLM node while the mock's terminal logs nothing at all — the client is
-knocking on a closed port, so there is no request for the server to report. The
+step 2. A mismatch fails as `openai.APIConnectionError: Connection error` — or
+`httpx.ConnectError: [Errno 61] Connection refused` underneath it — from every
+LLM node, while the mock's terminal logs nothing at all: the client is knocking
+on a closed port, so there is no request for the server to report. The
 key is a placeholder the mock ignores; it only has to be non-empty, because the
 OpenAI client refuses to send a blank one. `langgraph.json` already loads `.env`
 via `"env": ".env"`, and reads it at startup — restart `langgraph dev` after
@@ -1385,7 +1391,7 @@ editing.
 ### 2. Start the mock server (terminal 1)
 
 ```bash
-python3 -m uvicorn tests.mock_local_llm:app --port 8080
+python3 -m uvicorn tests.mock_local_llm:app --port 8000
 ```
 
 ### 3. Launch LangGraph dev (terminal 2)
@@ -1495,7 +1501,7 @@ exactly as in steps 2 and 3:
 
 ```bash
 # terminal 1
-python3 -m uvicorn tests.mock_local_llm:app --port 8080
+python3 -m uvicorn tests.mock_local_llm:app --port 8000
 
 # terminal 2
 langgraph dev
