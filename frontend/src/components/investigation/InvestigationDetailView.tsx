@@ -170,7 +170,13 @@ export function InvestigationDetailView({
             missing record, which would have been a 404.
           </p>
         ) : tab === 'report' ? (
+          // Keyed on the id so selecting a different investigation remounts
+          // the view. Without it React reconciles by position, the panels keep
+          // their open/closed flags, and the next report opens with whichever
+          // sections the *previous* one had been expanded to — which is the one
+          // state a fresh inspection should never start in.
           <StructuredReportView
+            key={detail.investigation_id}
             report={report}
             investigationId={detail.investigation_id}
           />
