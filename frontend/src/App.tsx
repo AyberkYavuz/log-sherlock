@@ -15,14 +15,23 @@
  * table's error envelope carries the reason and a retry.
  *
  * `App` owns `useInvestigations` because both halves depend on it — the table
- * renders it and the layout branches on it — and it owns the selected row for
- * the same reason the detail panel will need it in the next step.
+ * renders it and the layout branches on it — and it owns `selectedId` because
+ * that is shared too: the table highlights the selected row and
+ * `InvestigationDetailView` fetches it.
+ *
+ * The inspection panel sits *above* the history rather than beside it. A report
+ * is tall — five sections, a timeline of hundreds of events, a 420px graph
+ * canvas — so putting it in the table's column would leave the pager stranded
+ * far below the fold, and putting it beside the form would fight the form for
+ * the narrow column. Above the table it opens where the click happened and the
+ * list stays where it was.
  */
 
 import { useState } from 'react'
 
 import { Header } from './components/common/Header'
 import { Spinner } from './components/common/Spinner'
+import { InvestigationDetailView } from './components/investigation/InvestigationDetailView'
 import { InvestigationForm } from './components/investigation/InvestigationForm'
 import { InvestigationHistoryTable } from './components/investigation/InvestigationHistoryTable'
 import { useInvestigations } from './hooks/useInvestigations'
@@ -78,6 +87,13 @@ function App() {
     else history.refetch()
   }
 
+  const detail = (
+    <InvestigationDetailView
+      investigationId={selectedId}
+      onClose={() => setSelectedId(null)}
+    />
+  )
+
   const table = (
     <InvestigationHistoryTable
       data={history.data}
@@ -111,12 +127,20 @@ function App() {
         ) : (
           /* Scenario A — records exist: form beside the history on a wide
              screen, above it on a narrow one. The form sticks while a long
-             list scrolls, so submitting never means scrolling back up. */
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-            <div className="lg:col-span-5 lg:sticky lg:top-24 lg:self-start xl:col-span-4">
-              <InvestigationForm onCompleted={handleCompleted} />
+             list scrolls, so submitting never means scrolling back up.
+
+             The inspection panel takes the full width above both, because a
+             report is far too tall and too wide to live inside the table's
+             column. It renders nothing while `selectedId` is null, so the
+             layout below is untouched until a row is clicked. */
+          <div className="space-y-6">
+            {detail}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+              <div className="lg:col-span-5 lg:sticky lg:top-24 lg:self-start xl:col-span-4">
+                <InvestigationForm onCompleted={handleCompleted} />
+              </div>
+              <div className="lg:col-span-7 xl:col-span-8">{table}</div>
             </div>
-            <div className="lg:col-span-7 xl:col-span-8">{table}</div>
           </div>
         )}
       </main>
