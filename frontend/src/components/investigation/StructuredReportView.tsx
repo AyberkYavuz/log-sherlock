@@ -117,27 +117,38 @@ function formatRatio(ratio: number | undefined): string {
 // ---------------------------------------------------------------------------
 
 /**
- * One collapsible panel.
+ * One collapsible panel, closed until asked for.
  *
  * Collapsible because the five sections differ in size by two orders of
  * magnitude — a parser-metrics grid is eight numbers, a timeline can be
  * hundreds of events — and `provenance` is a required prop rather than an
  * optional flourish: it is the one thing every panel has to state.
+ *
+ * Closed is the *only* initial state, deliberately: there is no `defaultOpen`
+ * prop to pass. A whole report expanded at once is several screens of dense
+ * output with no way to see its shape, so the collapsed set of five headers is
+ * the table of contents. Each header still carries its provenance and a
+ * one-line summary, which is what makes a closed panel informative rather than
+ * merely small — a reader can tell how many notes were recorded or how many
+ * anomalies were found without opening anything.
+ *
+ * The open/closed flag lives here, per panel, rather than in the parent. That
+ * means remounting the view — selecting a different investigation — returns
+ * every section to closed, which is the correct default for a payload nobody
+ * has looked at yet.
  */
 function Panel({
   title,
   provenance,
   subtitle,
   children,
-  defaultOpen = true,
 }: {
   title: string
   provenance: string
   subtitle?: string
   children: React.ReactNode
-  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const [open, setOpen] = useState(false)
 
   return (
     <section className="overflow-hidden rounded-xl border border-obsidian-800 bg-obsidian-900">
@@ -471,11 +482,20 @@ function AiInsightsPanel({ report }: { report: StructuredInvestigationReport }) 
     ?.toLowerCase()
     .startsWith('root cause undetermined')
 
+  // Summarized for the collapsed header, so the panel is worth reading shut.
+  const signatureCount = errorSummary?.signatures?.length ?? 0
+  const anomalyCount = patternSummary?.anomalies?.length ?? 0
+
   return (
     <Panel
       title="AI Insights"
       provenance="Inference — what three models concluded"
-      subtitle="synthesis · ai_insights"
+      subtitle={
+        `${signatureCount} ` +
+        `${signatureCount === 1 ? 'signature' : 'signatures'}, ` +
+        `${anomalyCount} ${anomalyCount === 1 ? 'anomaly' : 'anomalies'}` +
+        (isFallbackRootCause ? ' · synthesis degraded' : '')
+      }
     >
       <div className="space-y-5">
         {/* -- synthesis.root_cause ---------------------------------------- */}
@@ -792,7 +812,7 @@ function ParserMetricsPanel({ metrics }: { metrics: ParserMetrics | undefined })
       <Panel
         title="Parser Metrics"
         provenance="Measurement — ingestion health"
-        subtitle="metadata.parser_metrics"
+        subtitle="not recorded"
       >
         <Absent>This report carries no parser metrics.</Absent>
       </Panel>
@@ -811,7 +831,16 @@ function ParserMetricsPanel({ metrics }: { metrics: ParserMetrics | undefined })
     <Panel
       title="Parser Metrics"
       provenance="Measurement — ingestion health"
-      subtitle="metadata.parser_metrics"
+      subtitle={
+        `${metrics.detected_format} · ` +
+        `${metrics.parsed_lines.toLocaleString()}/${metrics.total_lines.toLocaleString()} lines parsed` +
+        (metrics.malformed_lines > 0
+          ? ` · ${metrics.malformed_lines.toLocaleString()} malformed`
+          : '') +
+        (metrics.missing_timestamp_lines > 0
+          ? ` · ${metrics.missing_timestamp_lines.toLocaleString()} unstamped`
+          : '')
+      }
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Parser" value={metrics.parser_name} />
@@ -947,7 +976,17 @@ function MetadataPanel({
     <Panel
       title="Metadata"
       provenance="Run identity — the reproducibility record"
-      subtitle="metadata"
+      subtitle={
+        [
+          meta.analysis_mode,
+          meta.llm_provider,
+          meta.confidence_score === null || meta.confidence_score === undefined
+            ? 'score n/a'
+            : `score ${meta.confidence_score}/100`,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      }
     >
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -1151,7 +1190,11 @@ function DeterministicOutputsPanel({
     <Panel
       title="Deterministic Outputs"
       provenance="Measurement — arithmetic, reproducible from the same logs"
-      subtitle="deterministic_outputs"
+      subtitle={
+        `${(statistics?.severity?.error_count ?? 0).toLocaleString()} errors, ` +
+        `${(statistics?.severity?.warning_count ?? 0).toLocaleString()} warnings, ` +
+        `${events.length} timeline ${events.length === 1 ? 'event' : 'events'}`
+      }
     >
       <div className="space-y-5">
         {/* -- statistics --------------------------------------------------- */}
