@@ -262,3 +262,31 @@ export function getInvestigationDetail(
     signal,
   )
 }
+
+/**
+ * `DELETE /api/investigations/{id}` — remove one stored investigation.
+ *
+ * Hard removal, and the only destructive call in this module. The backend
+ * decides from `cursor.rowcount` rather than selecting first, so there is no
+ * window in which another client removes the row between a check and the
+ * delete.
+ *
+ * The `{status, investigation_id}` body the API returns is deliberately
+ * discarded: `status` is the constant `"deleted"` on every success and the id
+ * is the one the caller passed in, so neither tells a caller anything it did
+ * not already know. Resolving means it is gone.
+ *
+ * @throws ApiError with `status: 404` when no such record exists. **Deleting
+ *   twice is a 404, not a second success** — the API is deliberately not
+ *   idempotent here, because a client removing something it cannot see is
+ *   looking at a stale list, and saying so is what prompts the refresh.
+ */
+export async function deleteInvestigation(
+  id: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await request<unknown>(`/investigations/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal,
+  })
+}
