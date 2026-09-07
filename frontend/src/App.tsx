@@ -19,12 +19,14 @@
  * that is shared too: the table highlights the selected row and
  * `InvestigationDetailView` fetches it.
  *
- * The inspection panel sits *above* the history rather than beside it. A report
- * is tall — five sections, a timeline of hundreds of events, a 420px graph
- * canvas — so putting it in the table's column would leave the pager stranded
- * far below the fold, and putting it beside the form would fight the form for
- * the narrow column. Above the table it opens where the click happened and the
- * list stays where it was.
+ * The inspection panel sits at full width *below* both the form and the
+ * history. A report is tall — five sections, a timeline of hundreds of events,
+ * a 420px graph canvas — so putting it inside the table's column would leave
+ * the pager stranded far below the fold, and putting it beside the form would
+ * fight the form for the narrow column. Below both, it opens in reading order:
+ * the row that was clicked stays visible above it, so the list never jumps out
+ * from under the pointer, and the panel grows downward into empty space rather
+ * than pushing the controls off screen.
  */
 
 import { useState } from 'react'
@@ -34,7 +36,10 @@ import { Spinner } from './components/common/Spinner'
 import { InvestigationDetailView } from './components/investigation/InvestigationDetailView'
 import { InvestigationForm } from './components/investigation/InvestigationForm'
 import { InvestigationHistoryTable } from './components/investigation/InvestigationHistoryTable'
-import { useInvestigations } from './hooks/useInvestigations'
+import {
+  useDeleteInvestigation,
+  useInvestigations,
+} from './hooks/useInvestigations'
 import type { InvestigateResponse } from './types/api'
 
 function EmptyState({ onRefresh }: { onRefresh: () => void }) {
@@ -87,6 +92,31 @@ function App() {
     else history.refetch()
   }
 
+  /**
+   * A record was removed. Three things have to happen, in this order.
+   *
+   * Closing the inspection panel first is the one that matters: the panel
+   * fetches by id, so leaving a deleted id selected would send it after a row
+   * that no longer exists and answer with a 404 where a moment ago there was a
+   * report. Only the *inspected* record clears the selection — deleting some
+   * other row must not close a panel the reader is reading.
+   *
+   * Then the page cursor: deleting the last row of a page past the first
+   * strands the reader on an empty page, which the table can only describe
+   * ("past the end of the list") and not fix. Stepping back a page is itself a
+   * refetch, so the explicit one is skipped in that case to avoid asking for
+   * two pages to render one.
+   */
+  const handleDeleted = (id: string) => {
+    if (id === selectedId) setSelectedId(null)
+
+    const lastOnPage = (history.data?.items.length ?? 0) <= 1
+    if (lastOnPage && history.page > 1) history.setPage(history.page - 1)
+    else history.refetch()
+  }
+
+  const deletion = useDeleteInvestigation(handleDeleted)
+
   const detail = (
     <InvestigationDetailView
       investigationId={selectedId}
@@ -104,6 +134,10 @@ function App() {
       onRefresh={history.refetch}
       selectedId={selectedId}
       onSelectRow={setSelectedId}
+      onDelete={(id) => void deletion.remove(id)}
+      deletingId={deletion.pendingId}
+      deleteError={deletion.error}
+      onDismissDeleteError={deletion.clearError}
     />
   )
 
@@ -129,18 +163,18 @@ function App() {
              screen, above it on a narrow one. The form sticks while a long
              list scrolls, so submitting never means scrolling back up.
 
-             The inspection panel takes the full width above both, because a
+             The inspection panel takes the full width below both, because a
              report is far too tall and too wide to live inside the table's
              column. It renders nothing while `selectedId` is null, so the
-             layout below is untouched until a row is clicked. */
+             layout above is untouched until a row is clicked. */
           <div className="space-y-6">
-            {detail}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
               <div className="lg:col-span-5 lg:sticky lg:top-24 lg:self-start xl:col-span-4">
                 <InvestigationForm onCompleted={handleCompleted} />
               </div>
               <div className="lg:col-span-7 xl:col-span-8">{table}</div>
             </div>
+            {detail}
           </div>
         )}
       </main>
