@@ -329,16 +329,24 @@ HTTP path 422s.
 | Service | Address | Notes |
 | --- | --- | --- |
 | **FastAPI backend** | `http://127.0.0.1:8010` | Override with `API_PORT` |
-| **Mock LLM server** | `http://localhost:8080` | Optional — `tests/mock_local_llm.py`, for offline runs |
+| **Mock LLM server** | `http://127.0.0.1:8000` | Optional — `tests/mock_local_llm.py`, for offline runs |
 | **PostgreSQL** | `localhost:5432` | Override with `DB_HOST` / `DB_PORT` |
 | React (CRA) | `http://localhost:3000` | CORS-allowed origin |
 | React (Vite) | `http://localhost:5173` | CORS-allowed origin |
 
-**Why 8010 and not 8000 or 8080.** Both of those are already spoken for on the
-local-LLM path: `8000` is `llm_factory.DEFAULT_LOCAL_BASE_URL`, and `8080` is
-where `GRAPH_README.md` has you start the mock provider. Running the API
-alongside a mock LLM is the normal offline setup, so a default that fought
-either of them for a socket would be a default that fails on first use.
+**Why 8010 and not 8000.** `8000` is spoken for on the local-LLM path: it is
+`llm_factory.DEFAULT_LOCAL_BASE_URL`, and therefore also the port
+`GRAPH_README.md` has you start the mock provider on, so that the default and
+the instructions cannot disagree. Running the API alongside a mock LLM is the
+normal offline setup, so a default that fought it for a socket would be a
+default that fails on first use.
+
+The mock deliberately sits on the port the code already defaults to rather than
+on a port of its own. An earlier revision of these documents started it on
+`8080` while `.env` pointed at `8080` and the code defaulted to `8000`; any two
+of those three agreeing was enough to look correct and still fail, because the
+mismatch surfaces only as `httpx.ConnectError: [Errno 61] Connection refused`
+from every LLM node with nothing at all in the mock's terminal.
 
 The backend binds **loopback**, not `0.0.0.0`. This process holds a database
 credential and reaches LLM providers with your keys; a development default that
@@ -414,7 +422,7 @@ project's mock LLM in a second terminal and send `llm_provider: "local"`:
 
 ```bash
 # terminal 1
-python3 -m uvicorn tests.mock_local_llm:app --port 8080
+python3 -m uvicorn tests.mock_local_llm:app --port 8000
 
 # terminal 2
 python3 backend.py
