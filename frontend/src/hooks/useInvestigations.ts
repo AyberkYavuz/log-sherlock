@@ -1,9 +1,18 @@
 /**
- * The paginated record list, `POST /api/investigations`, and its one mutation.
+ * The stored record list, `POST /api/investigations`, and its one mutation.
  *
- * `useInvestigations` owns the page cursor as well as the data, because the two
- * are one thing: a component that held `page` itself would have to remember to
- * refetch after every change, and would get it wrong exactly once.
+ * **Why this loads every record rather than one page.** The endpoint paginates
+ * server-side, but the history panel filters client-side, and a filter has to
+ * see everything it claims to search. Filtering one page of ten would make
+ * "no results" mean "not on the page you happen to be looking at" — a search
+ * that reports absence it cannot actually establish. So the hook reads the
+ * whole table once and both filtering and paging happen in the component.
+ *
+ * That trade is bounded rather than unlimited. `MAX_LIMIT` on the API is 100,
+ * so the load is a first request that reports `total` followed by the remaining
+ * pages fetched concurrently, and it stops at :data:`MAX_RECORDS`. Past that
+ * ceiling `truncated` is set and the component says so, because a search over a
+ * silently clipped set is the same lie in a different place.
  *
  * `useDeleteInvestigation` sits beside it rather than inside it, and takes the
  * refetch as a callback. Folding the delete into `useInvestigations` would give
@@ -18,56 +27,100 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   deleteInvestigation,
   isAbortError,
   listInvestigations,
   toApiError,
 } from '../services/api'
 import type { ApiError } from '../services/api'
-import type { PaginatedInvestigationsResponse } from '../types/api'
+import type { InvestigationItem } from '../types/api'
 
-export interface UseInvestigationsOptions {
-  initialPage?: number
-  /** Rows per page. Fixed for the hook's lifetime; 1-100, or the backend 422s. */
-  limit?: number
+/**
+ * Rows per request. The API's `MAX_LIMIT`; anything above it is a 422, so this
+ * is the fewest round trips the whole table can be read in.
+ */
+export const FETCH_PAGE_SIZE = 100
+
+/**
+ * The most rows this hook will hold.
+ *
+ * Ten requests' worth. The ceiling exists because the client keeps every row in
+ * memory and re-scans them on each keystroke of the filter; it is high enough
+ * that no realistic development table reaches it, and low enough that a table
+ * which has grown past client-side search cannot quietly degrade the browser.
+ * Reaching it sets `truncated` rather than failing.
+ */
+export const MAX_RECORDS = 1000
+
+export interface InvestigationsSnapshot {
+  /** Every row loaded, newest first, unfiltered and unpaginated. */
+  items: InvestigationItem[]
+  /** Rows in the whole table per the server, which may exceed `items.length`. */
+  total: number
+  /** Whether `MAX_RECORDS` cut the load short of `total`. */
+  truncated: boolean
 }
 
 export interface UseInvestigationsResult {
-  page: number
-  limit: number
-  /** Move the cursor. The list refetches on change. */
-  setPage: (page: number) => void
-  data: PaginatedInvestigationsResponse | null
+  /** `null` until the first load settles — see `App` for why that matters. */
+  data: InvestigationsSnapshot | null
   loading: boolean
   error: ApiError | null
-  /** Re-read the current page. */
+  /** Re-read the whole list. */
   refetch: () => void
 }
 
 interface Settled {
-  key: string
-  data: PaginatedInvestigationsResponse | null
+  token: number
+  data: InvestigationsSnapshot | null
   error: ApiError | null
 }
 
-export function useInvestigations(
-  options: UseInvestigationsOptions = {},
-): UseInvestigationsResult {
-  const { initialPage = DEFAULT_PAGE, limit = DEFAULT_LIMIT } = options
+/**
+ * Read the whole table, in as few requests as its size allows.
+ *
+ * The first page is awaited alone because it is what reports `total`; there is
+ * no way to know how many requests are needed without it. The rest go out
+ * together rather than in sequence, so a 400-row table costs one round trip
+ * plus one, not four.
+ */
+async function fetchAllInvestigations(
+  signal: AbortSignal,
+): Promise<InvestigationsSnapshot> {
+  const first = await listInvestigations(1, FETCH_PAGE_SIZE, signal)
+  const total = first.total
+  const capped = Math.min(total, MAX_RECORDS)
 
-  const [page, setPage] = useState(initialPage)
+  const items = [...first.items]
+  const pagesNeeded = Math.ceil(capped / FETCH_PAGE_SIZE)
+
+  if (pagesNeeded > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: pagesNeeded - 1 }, (_, index) =>
+        listInvestigations(index + 2, FETCH_PAGE_SIZE, signal),
+      ),
+    )
+    for (const page of rest) items.push(...page.items)
+  }
+
+  return {
+    // Trimmed rather than trusted: `total` can grow between the first request
+    // and the last, so the tail page may carry rows past the cap.
+    items: items.slice(0, capped),
+    total,
+    truncated: total > capped,
+  }
+}
+
+export function useInvestigations(): UseInvestigationsResult {
   const [token, setToken] = useState(0)
   const [settled, setSettled] = useState<Settled>({
-    key: '',
+    // No load has settled yet, and -1 can never be a token, so the first
+    // render already reports `loading`.
+    token: -1,
     data: null,
     error: null,
   })
-
-  // Identifies the request this render wants. Empty string is unreachable as a
-  // real key, so the first render reports `loading`.
-  const requestKey = `${token}|${page}|${limit}`
 
   useEffect(() => {
     const controller = new AbortController()
@@ -75,13 +128,13 @@ export function useInvestigations(
 
     void (async () => {
       try {
-        const data = await listInvestigations(page, limit, controller.signal)
-        if (active) setSettled({ key: requestKey, data, error: null })
+        const data = await fetchAllInvestigations(controller.signal)
+        if (active) setSettled({ token, data, error: null })
       } catch (cause) {
         if (!active || isAbortError(cause)) return
-        // The previous page is dropped rather than left on screen: stale rows
+        // The previous rows are dropped rather than left on screen: stale rows
         // under a fresh error read as the answer to the request that failed.
-        setSettled({ key: requestKey, data: null, error: toApiError(cause) })
+        setSettled({ token, data: null, error: toApiError(cause) })
       }
     })()
 
@@ -89,16 +142,13 @@ export function useInvestigations(
       active = false
       controller.abort()
     }
-  }, [requestKey, page, limit])
+  }, [token])
 
   const refetch = useCallback(() => setToken((current) => current + 1), [])
 
   return {
-    page,
-    limit,
-    setPage,
     data: settled.data,
-    loading: settled.key !== requestKey,
+    loading: settled.token !== token,
     error: settled.error,
     refetch,
   }
