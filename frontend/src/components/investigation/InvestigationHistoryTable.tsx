@@ -1,16 +1,24 @@
 /**
- * The stored-investigation list, one page at a time.
+ * The stored-investigation list: search, then page, then render.
  *
- * Presentational: the caller owns `useInvestigations` and passes its state in,
- * because the page cursor is shared with the layout (an empty table decides
- * which scenario renders) and a component that owned it privately would keep
- * that decision to itself.
+ * The caller owns the fetch and hands over every loaded row; this component
+ * owns the filter and the page cursor, because both are views onto that one
+ * array and neither means anything outside it. The order is the important part
+ * — **filter first, paginate second**. Paginating first and filtering the
+ * resulting page would make "no results" mean "not on the page you are looking
+ * at", which is a claim about absence the filter has no standing to make.
+ *
+ * That is also why `useInvestigations` loads the whole table rather than one
+ * page: a filter can only search what it holds. Where the load was cut short
+ * by its own ceiling, the footer says so, since a search over a silently
+ * clipped set is the same problem moved somewhere less visible.
  *
  * Two details of the payload are load-bearing here. `confidence_score` is
  * nullable and `null` means *not measured*, which is a different fact from
- * `0` — the badge says so rather than rendering a zero. And `total_pages` is
- * `0` for an empty table rather than `1`, so the pager reads it directly
- * instead of special-casing one page containing nothing.
+ * `0` — the badge says so rather than rendering a zero, and the filter matches
+ * it as `n/a` so what is searchable is what is legible. Every other column is
+ * optional too, because a run that degraded before recording a provider still
+ * has a row worth listing.
  *
  * Deletion is confirmed inline, in the row, rather than in a modal. The row is
  * where the record's identity already is — the id, the application, the score
@@ -21,15 +29,73 @@
  * handling to be accessible.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { ErrorEnvelope } from '../common/ErrorEnvelope'
 import { Spinner } from '../common/Spinner'
 import type { ApiError } from '../../services/api'
-import type {
-  InvestigationItem,
-  PaginatedInvestigationsResponse,
-} from '../../types/api'
+import type { InvestigationsSnapshot } from '../../hooks/useInvestigations'
+import type { InvestigationItem } from '../../types/api'
+
+/** Rows shown per page of the filtered list. */
+const PAGE_SIZE = 10
+
+/**
+ * Stands in for `data.items` before the first load settles.
+ *
+ * A module constant rather than a `?? []` literal at the use site: the literal
+ * would be a fresh array on every render, so the memoized filter below would
+ * see a changed dependency and re-run each time — re-scanning every loaded row
+ * on renders where nothing about the data changed at all.
+ */
+const NO_ITEMS: InvestigationItem[] = []
+
+/**
+ * The searchable text of one row.
+ *
+ * The rule is that the filter matches **what the row displays**, so a reader
+ * can always predict what a query will hit. Hence `confidence_score` is
+ * searchable both as its number and as `n/a`, which is what the badge shows
+ * when the score is `null` — searching `n/a` finds the unmeasured runs, and
+ * that is a genuinely useful query rather than a curiosity.
+ *
+ * `created_at` is deliberately excluded. It renders through
+ * `toLocaleString`, so what a row displays depends on the reader's locale and
+ * time zone; a filter over it would match different rows on different
+ * machines, and matching the raw ISO string instead would mean matching text
+ * that appears nowhere on screen.
+ */
+function searchableText(item: InvestigationItem): string {
+  const score =
+    item.confidence_score === null || item.confidence_score === undefined
+      ? 'n/a'
+      : String(item.confidence_score)
+
+  return [
+    item.investigation_id,
+    item.application_name,
+    item.analysis_mode,
+    item.llm_provider,
+    score,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+/**
+ * Match a row against a query.
+ *
+ * Split on whitespace and every term must match somewhere in the row, so
+ * `openai fast` narrows rather than widens. Each term is a plain substring
+ * test: users type fragments of ids (`abfb`) far more often than whole ones,
+ * and a prefix-only or word-boundary rule would miss exactly that case.
+ */
+function matchesQuery(item: InvestigationItem, terms: string[]): boolean {
+  if (terms.length === 0) return true
+  const haystack = searchableText(item)
+  return terms.every((term) => haystack.includes(term))
+}
 
 /** Score thresholds, highest first. */
 const SCORE_TIERS: { min: number; className: string }[] = [
@@ -228,8 +294,6 @@ export function InvestigationHistoryTable({
   data,
   loading,
   error,
-  page,
-  onPageChange,
   onRefresh,
   selectedId,
   onSelectRow,
@@ -238,11 +302,9 @@ export function InvestigationHistoryTable({
   deleteError = null,
   onDismissDeleteError,
 }: {
-  data: PaginatedInvestigationsResponse | null
+  data: InvestigationsSnapshot | null
   loading: boolean
   error: ApiError | null
-  page: number
-  onPageChange: (page: number) => void
   onRefresh: () => void
   selectedId: string | null
   onSelectRow: (id: string) => void
@@ -254,36 +316,137 @@ export function InvestigationHistoryTable({
   deleteError?: ApiError | null
   onDismissDeleteError?: () => void
 }) {
-  const items = data?.items ?? []
-  const totalPages = data?.total_pages ?? 0
+  const allItems = data?.items ?? NO_ITEMS
   const total = data?.total ?? 0
+  const truncated = data?.truncated ?? false
+
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
 
   // Which row is asking "are you sure?". One at a time by construction, since
   // it is a single id rather than a set: opening a second confirmation closes
   // the first, so there is never more than one armed destructive button.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
+  const terms = useMemo(
+    () => query.trim().toLowerCase().split(/\s+/).filter(Boolean),
+    [query],
+  )
+
+  const filtered = useMemo(
+    () => allItems.filter((item) => matchesQuery(item, terms)),
+    [allItems, terms],
+  )
+
+  const filtering = terms.length > 0
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+
+  // Clamped rather than reset. Narrowing the query while on page 4 should land
+  // on the last page of what is left, not silently on page 1 — and a page that
+  // has gone out of range must not render as empty when rows still match.
+  // Derived on every render instead of corrected in an effect, so there is no
+  // frame in which the pager and the rows disagree.
+  const safePage = totalPages === 0 ? 1 : Math.min(page, totalPages)
+  const start = (safePage - 1) * PAGE_SIZE
+  const items = filtered.slice(start, start + PAGE_SIZE)
+
+  const changePage = (next: number) => {
+    setPage(Math.max(1, Math.min(next, Math.max(totalPages, 1))))
+  }
+
+  const changeQuery = (next: string) => {
+    setQuery(next)
+    // The old cursor means nothing against a different result set.
+    setPage(1)
+    // An armed confirmation belongs to a row that may be filtered out by the
+    // next keystroke; disarming it prevents a Delete button surviving into a
+    // list where its row is no longer visible.
+    setConfirmingId(null)
+  }
+
   return (
     <section className="rounded-xl border border-obsidian-800 bg-obsidian-900 shadow-lg shadow-black/20">
-      <div className="flex flex-wrap items-center gap-3 border-b border-obsidian-800 px-5 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-slate-100">History</h2>
-          <p className="text-xs text-severity-muted">
-            {total} stored {total === 1 ? 'investigation' : 'investigations'},
-            newest first
-          </p>
+      <div className="border-b border-obsidian-800 px-5 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-100">History</h2>
+            <p className="text-xs text-severity-muted">
+              {/* Two counts while filtering, because "3 investigations" over a
+                  filtered list would misreport how much is stored. */}
+              {filtering
+                ? `${filtered.length} of ${allItems.length} shown`
+                : `${total} stored ${
+                    total === 1 ? 'investigation' : 'investigations'
+                  }`}
+              , newest first
+            </p>
+          </div>
+          {loading && <Spinner className="h-4 w-4 text-severity-info" />}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="ml-auto rounded-lg border border-obsidian-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-brand-purple/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Refresh
+          </button>
         </div>
-        {loading && (
-          <Spinner className="h-4 w-4 text-severity-info" />
+
+        {/* Filtering is local to rows already in memory, so it runs on every
+            keystroke with no debounce: there is no request to spare and a
+            delay would only make the table feel slower than it is. */}
+        <div className="relative mt-3">
+          <span
+            className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-severity-muted"
+            aria-hidden="true"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              className="h-3.5 w-3.5"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-4.5-4.5" />
+            </svg>
+          </span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => changeQuery(event.target.value)}
+            // Escape clears, which is what the native `type="search"` clear
+            // affordance does in the browsers that draw one — handled here so
+            // the behaviour is the same in the ones that do not.
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') changeQuery('')
+            }}
+            placeholder="Search id, application, mode, provider or score…"
+            aria-label="Search stored investigations"
+            className="w-full rounded-lg border border-obsidian-800 bg-obsidian-950 py-2 pl-9 pr-20 text-sm text-slate-200 placeholder:text-severity-muted focus:border-brand-purple focus:outline-none focus:ring-1 focus:ring-brand-purple [&::-webkit-search-cancel-button]:hidden"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => changeQuery('')}
+              className="absolute inset-y-0 right-2 my-1 rounded px-2 text-xs font-medium text-severity-muted transition-colors hover:text-slate-200"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Stated whenever the filter is active, not only when it matches
+            nothing: a query that returns 12 rows out of a clipped set is just
+            as incomplete as one that returns none, and only this line says so. */}
+        {truncated && filtering && (
+          <p className="mt-2 text-xs text-severity-warn">
+            Searching the {allItems.length.toLocaleString()} most recent of{' '}
+            {total.toLocaleString()} records. Older ones are not loaded and
+            cannot match.
+          </p>
         )}
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          className="ml-auto rounded-lg border border-obsidian-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-brand-purple/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Refresh
-        </button>
       </div>
 
       {error ? (
@@ -392,31 +555,51 @@ export function InvestigationHistoryTable({
           </div>
 
           {items.length === 0 && (
-            <p className="border-t border-obsidian-800 px-5 py-8 text-center text-sm text-severity-muted">
-              {loading
-                ? 'Loading investigations…'
-                : page > 1
-                  ? 'This page is past the end of the list.'
-                  : 'No investigations stored yet.'}
-            </p>
+            <div className="border-t border-obsidian-800 px-5 py-8 text-center">
+              {loading ? (
+                <p className="text-sm text-severity-muted">
+                  Loading investigations…
+                </p>
+              ) : filtering ? (
+                // "No matches" and "nothing stored" are different facts, and
+                // conflating them would tell someone their table was empty
+                // when it was only their query that was.
+                <>
+                  <p className="text-sm text-slate-200">
+                    No investigation matches “{query.trim()}”.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => changeQuery('')}
+                    className="mt-2 text-xs font-medium text-brand-purple transition-colors hover:text-brand-violet"
+                  >
+                    Clear search
+                  </button>
+                </>
+              ) : (
+                <p className="text-sm text-severity-muted">
+                  No investigations stored yet.
+                </p>
+              )}
+            </div>
           )}
 
           <div className="flex flex-wrap items-center gap-3 border-t border-obsidian-800 px-5 py-3">
             <button
               type="button"
-              onClick={() => onPageChange(page - 1)}
-              disabled={page <= 1 || loading}
+              onClick={() => changePage(safePage - 1)}
+              disabled={safePage <= 1 || loading}
               className="rounded-lg border border-obsidian-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-brand-purple/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
             <span className="text-xs text-severity-muted">
-              Page {page} of {Math.max(totalPages, 1)}
+              Page {safePage} of {Math.max(totalPages, 1)}
             </span>
             <button
               type="button"
-              onClick={() => onPageChange(page + 1)}
-              disabled={page >= totalPages || loading}
+              onClick={() => changePage(safePage + 1)}
+              disabled={safePage >= totalPages || loading}
               className="rounded-lg border border-obsidian-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-brand-purple/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
