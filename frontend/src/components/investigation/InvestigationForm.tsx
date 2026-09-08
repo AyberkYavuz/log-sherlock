@@ -47,6 +47,9 @@ const PROVIDERS: { value: LLMProvider; label: string }[] = [
 /** The column width of the `application_name` column, enforced server-side. */
 const MAX_APPLICATION_NAME = 255
 
+/** `investigation_id` shares that column width and the same server-side check. */
+const MAX_INVESTIGATION_ID = 255
+
 /**
  * Extensions the picker offers and a drop is checked against.
  *
@@ -338,6 +341,7 @@ export function InvestigationForm({
   onCompleted?: (result: InvestigateResponse) => void
 }) {
   const [applicationName, setApplicationName] = useState('')
+  const [investigationId, setInvestigationId] = useState('')
   const [rawLogs, setRawLogs] = useState('')
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('standard')
   const [provider, setProvider] = useState<LLMProvider>('local')
@@ -354,6 +358,7 @@ export function InvestigationForm({
   // turns that into a disabled button rather than a round trip that fails.
   const trimmedName = applicationName.trim()
   const trimmedLogs = rawLogs.trim()
+  const trimmedId = investigationId.trim()
   const canSubmit = !!trimmedName && !!trimmedLogs && !run.loading
 
   const lineCount = rawLogs ? rawLogs.split('\n').length : 0
@@ -389,6 +394,11 @@ export function InvestigationForm({
       analysis_mode: analysisMode,
       llm_provider: provider,
       enable_web_search: enableWebSearch,
+      // Omitted entirely when blank rather than sent as `""`. The backend
+      // treats a supplied id as authoritative and never replaces it, so an
+      // empty string would be a *supplied* empty id rather than a request to
+      // generate one — and the request model would 422 on it.
+      ...(trimmedId ? { investigation_id: trimmedId } : {}),
     }
 
     const result = await run.execute(payload)
@@ -422,6 +432,37 @@ export function InvestigationForm({
             autoComplete="off"
             className="w-full rounded-lg border border-obsidian-800 bg-obsidian-950 px-3 py-2 text-sm text-slate-200 placeholder:text-severity-muted focus:border-brand-purple focus:outline-none focus:ring-1 focus:ring-brand-purple"
           />
+        </div>
+
+        <div>
+          <FieldLabel htmlFor="investigation_id" hint="optional">
+            Custom ID
+          </FieldLabel>
+          <input
+            id="investigation_id"
+            type="text"
+            value={investigationId}
+            onChange={(event) => setInvestigationId(event.target.value)}
+            maxLength={MAX_INVESTIGATION_ID}
+            placeholder="Leave blank to generate one"
+            autoComplete="off"
+            spellCheck={false}
+            aria-describedby="investigation_id_hint"
+            className="w-full rounded-lg border border-obsidian-800 bg-obsidian-950 px-3 py-2 font-mono text-sm text-slate-200 placeholder:font-sans placeholder:text-severity-muted focus:border-brand-purple focus:outline-none focus:ring-1 focus:ring-brand-purple"
+          />
+          {/* The consequence is stated because it is not guessable and it is
+              not small: the write is an upsert keyed on this value, so reusing
+              an id *overwrites* that investigation rather than being rejected.
+              That is the feature — it is what makes a re-run correct a stored
+              row — but it is also the way to lose a report by accident. */}
+          <p
+            id="investigation_id_hint"
+            className="mt-1.5 text-xs leading-relaxed text-severity-muted"
+          >
+            Re-running with an id that already exists replaces that stored
+            investigation. Left blank, the backend generates one and reports it
+            below — convenient, but it mints a new row on every run.
+          </p>
         </div>
 
         <div>
