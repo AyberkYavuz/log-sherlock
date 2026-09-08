@@ -22,7 +22,7 @@
  * which route was used.
  */
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { useRunInvestigation } from '../../hooks/useRunInvestigation'
 import { ErrorEnvelope } from '../common/ErrorEnvelope'
@@ -54,12 +54,20 @@ const MAX_INVESTIGATION_ID = 255
  * Extensions the picker offers and a drop is checked against.
  *
  * Matched on the extension rather than on `File.type`, because the browser
- * reports `""` for `.log` on every platform and `application/json` only
- * sometimes for `.json` — a MIME check would reject the project's own
- * `sample_logs/*.log` fixtures, which are the files most likely to be dropped
- * here.
+ * reports `""` for `.log` on every platform — a MIME check would reject the
+ * project's own `sample_logs/*.log` fixtures, which are the files most likely
+ * to be dropped here.
+ *
+ * `.json` is deliberately **not** accepted, and dropping it costs nothing: the
+ * API takes log *text*, and a JSON-lines corpus is still a log file. Every
+ * JSON-shaped fixture in `sample_logs/` is named for what it is — `json.log`,
+ * `java_spring_boot_large.json.log` — so all of them still pass this check. A
+ * bare `.json` file, by contrast, is almost always a single pretty-printed
+ * document rather than one object per line, which the parser would read as one
+ * unparseable entry. Refusing it at the picker is a better answer than a
+ * completed investigation over a single malformed line.
  */
-const ACCEPTED_EXTENSIONS = ['.txt', '.json', '.log'] as const
+const ACCEPTED_EXTENSIONS = ['.txt', '.log'] as const
 
 /** The `accept` attribute, and the hint shown under the drop zone. */
 const ACCEPT_ATTRIBUTE = ACCEPTED_EXTENSIONS.join(',')
@@ -67,15 +75,37 @@ const ACCEPT_ATTRIBUTE = ACCEPTED_EXTENSIONS.join(',')
 /**
  * Refused above this size, in bytes.
  *
- * The backend imposes no ceiling and the graph genuinely handles multi-megabyte
- * corpora, so this guards the *browser*: the text lands in React state and in a
- * controlled `<textarea>`, which repaints the whole value on every keystroke. A
- * 4 MB fixture pasted into a textarea makes the tab unusable long before the
- * request is ever sent. Files above this are rejected with their real size,
- * pointing at the API for the full-corpus case rather than pretending the limit
- * is the pipeline's.
+ * Raised from 8 MB to 16 MB, and the number is set by the *browser* rather than
+ * by anything on the wire. Four candidate limits were measured; three of them
+ * turned out not to bind:
+ *
+ *   * **The backend.** FastAPI, uvicorn and h11 impose no body-size ceiling and
+ *     none is configured in `backend/`, so there is no server-side cap to
+ *     respect at all.
+ *   * **The Vite dev proxy.** It streams the body rather than buffering it, and
+ *     its only relevant bound is the 15-minute timeout in `vite.config.ts`.
+ *   * **JSON expansion.** `raw_logs` crosses the wire inside a JSON body, and
+ *     escaping measured at 1.003x for plain-text corpora and 1.142x for
+ *     JSON-lines ones, so 16 MB of logs is at most ~18.3 MB on the wire.
+ *   * **JS-side work.** Measured on the 3.5 MB Spring Boot benchmark scaled up:
+ *     `split('\n')` costs ~4 ms and `JSON.stringify` ~37 ms at 21 MB. Neither
+ *     is a wall.
+ *
+ * What does bind is DOM text layout. The value lives in a controlled
+ * `<textarea>`, so the browser holds its own copy and re-lays the text out when
+ * React reassigns `value`. That cost is not measurable in Node and it grows
+ * faster than the heap does. 16 MB keeps the peak transient footprint bounded —
+ * ~32 MB for the UTF-16 string, a comparable DOM copy, and a ~37 MB body string
+ * that is alive only across the `JSON.stringify` in `handleSubmit` — while
+ * clearing the largest corpus in `sample_logs/` (3.48 MB) by 4.6x.
+ *
+ * Typing into a loaded 16 MB payload *is* sluggish, and that is the accepted
+ * trade rather than an oversight: a file that size is loaded to be submitted,
+ * not edited, and Clear stays responsive either way. Files above the ceiling are
+ * rejected with their real size and pointed at the API, so the message never
+ * implies the limit is the pipeline's.
  */
-const MAX_FILE_BYTES = 8 * 1024 * 1024
+const MAX_FILE_BYTES = 16 * 1024 * 1024
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -173,9 +203,12 @@ function LogFileDropZone({
     }
     if (file.size > MAX_FILE_BYTES) {
       onError(
-        `${file.name} is ${formatBytes(file.size)}, above the ` +
-          `${formatBytes(MAX_FILE_BYTES)} the editor can hold. Post it to ` +
-          'POST /api/investigate directly for a full-corpus run.',
+        `${file.name} is ${formatBytes(file.size)}, which is over the ` +
+          `${formatBytes(MAX_FILE_BYTES)} limit of this editor by ` +
+          `${formatBytes(file.size - MAX_FILE_BYTES)}. The limit is the ` +
+          'browser’s, not the pipeline’s — the analysis itself has no ' +
+          'size ceiling. Either split the file, or post it straight to ' +
+          'POST /api/investigate for a full-corpus run.',
       )
       return
     }
@@ -361,7 +394,14 @@ export function InvestigationForm({
   const trimmedId = investigationId.trim()
   const canSubmit = !!trimmedName && !!trimmedLogs && !run.loading
 
-  const lineCount = rawLogs ? rawLogs.split('\n').length : 0
+  // Memoized because it is O(n) in the payload and the ceiling is now 16 MB:
+  // unmemoized this allocated an array of every line on every render, so
+  // toggling a checkbox re-split 60,000 lines. Keyed on `rawLogs`, so typing
+  // still pays for exactly one split per edit.
+  const lineCount = useMemo(
+    () => (rawLogs ? rawLogs.split('\n').length : 0),
+    [rawLogs],
+  )
 
   /** Adopt file text as the payload, replacing whatever was in the box. */
   const handleFileText = (text: string, file: LoadedFile) => {
