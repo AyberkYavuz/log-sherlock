@@ -29,7 +29,7 @@
  * than pushing the controls off screen.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Header } from './components/common/Header'
 import { Spinner } from './components/common/Spinner'
@@ -75,9 +75,64 @@ function FirstLoad() {
   )
 }
 
+/**
+ * Scroll an element into view, honouring the reader's motion preference.
+ *
+ * `behavior: 'smooth'` is the requested effect and the right default, but it is
+ * also exactly the kind of animation `prefers-reduced-motion` exists to
+ * suppress — for some readers a long smooth scroll is nauseating rather than
+ * pleasant. Those readers still get taken to the panel; they get taken there
+ * instantly.
+ */
+function scrollIntoView(element: HTMLElement | null) {
+  if (!element) return
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  element.scrollIntoView({
+    behavior: reduced ? 'auto' : 'smooth',
+    block: 'start',
+  })
+}
+
 function App() {
-  const history = useInvestigations({ initialPage: 1, limit: 10 })
+  const history = useInvestigations()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  // The two scroll targets. The panel renders below the table, so opening it
+  // puts it off screen on most viewports and closing it leaves the reader
+  // wherever the panel used to be — neither is somewhere useful, hence both
+  // refs.
+  const historyRef = useRef<HTMLDivElement>(null)
+  const detailRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Scroll to the panel whenever a *different* record is selected.
+   *
+   * An effect rather than a click handler, because the panel does not exist yet
+   * at click time: `selectedId` is what mounts it, so scrolling in the handler
+   * would aim at a ref that is still null. Running after commit means the
+   * element is in the document and has its height.
+   *
+   * The dependency is `selectedId` alone, so re-selecting the same row does not
+   * re-scroll, and neither does any unrelated re-render — a refetch landing
+   * underneath a reader should not yank the page.
+   */
+  useEffect(() => {
+    if (selectedId === null) return
+    scrollIntoView(detailRef.current)
+  }, [selectedId])
+
+  /**
+   * Close the panel and take the reader back to the list.
+   *
+   * The scroll is issued before the state change rather than after: the table
+   * sits *above* the panel, so removing the panel cannot move it, and its
+   * position is therefore already correct. Waiting for a re-render would only
+   * risk scrolling to an element mid-relayout.
+   */
+  const closeInspection = () => {
+    scrollIntoView(historyRef.current)
+    setSelectedId(null)
+  }
 
   const handleCompleted = (result: InvestigateResponse) => {
     // Only a stored run changes what the history holds. An unstored one is
@@ -86,42 +141,38 @@ function App() {
     if (!result.db_persisted) return
 
     setSelectedId(result.investigation_id)
-    // The new record is the newest, so it is on page one. Moving the cursor is
-    // itself a refetch; asking for both would issue two requests for one page.
-    if (history.page !== 1) history.setPage(1)
-    else history.refetch()
+    history.refetch()
   }
 
   /**
-   * A record was removed. Three things have to happen, in this order.
+   * A record was removed.
    *
-   * Closing the inspection panel first is the one that matters: the panel
-   * fetches by id, so leaving a deleted id selected would send it after a row
-   * that no longer exists and answer with a 404 where a moment ago there was a
-   * report. Only the *inspected* record clears the selection — deleting some
-   * other row must not close a panel the reader is reading.
+   * Clearing the selection is the part that matters: the panel fetches by id,
+   * so leaving a deleted id selected would send it after a row that no longer
+   * exists and answer with a 404 where a moment ago there was a report. Only
+   * the *inspected* record clears it — deleting some other row must not close a
+   * panel the reader is reading — and that case also scrolls back to the list,
+   * since the thing the reader was looking at is gone.
    *
-   * Then the page cursor: deleting the last row of a page past the first
-   * strands the reader on an empty page, which the table can only describe
-   * ("past the end of the list") and not fix. Stepping back a page is itself a
-   * refetch, so the explicit one is skipped in that case to avoid asking for
-   * two pages to render one.
+   * The page cursor needs no attention here. Paging is client-side over the
+   * loaded array now, and the table clamps an out-of-range page on render, so
+   * deleting the last row of the last page lands on the new last page by
+   * itself.
    */
   const handleDeleted = (id: string) => {
-    if (id === selectedId) setSelectedId(null)
-
-    const lastOnPage = (history.data?.items.length ?? 0) <= 1
-    if (lastOnPage && history.page > 1) history.setPage(history.page - 1)
-    else history.refetch()
+    if (id === selectedId) closeInspection()
+    history.refetch()
   }
 
   const deletion = useDeleteInvestigation(handleDeleted)
 
   const detail = (
-    <InvestigationDetailView
-      investigationId={selectedId}
-      onClose={() => setSelectedId(null)}
-    />
+    <div ref={detailRef}>
+      <InvestigationDetailView
+        investigationId={selectedId}
+        onClose={closeInspection}
+      />
+    </div>
   )
 
   const table = (
@@ -129,8 +180,6 @@ function App() {
       data={history.data}
       loading={history.loading}
       error={history.error}
-      page={history.page}
-      onPageChange={history.setPage}
       onRefresh={history.refetch}
       selectedId={selectedId}
       onSelectRow={setSelectedId}
@@ -172,7 +221,12 @@ function App() {
               <div className="lg:col-span-5 lg:sticky lg:top-24 lg:self-start xl:col-span-4">
                 <InvestigationForm onCompleted={handleCompleted} />
               </div>
-              <div className="lg:col-span-7 xl:col-span-8">{table}</div>
+              {/* The ref goes on the column rather than inside the table, so
+                  closing the panel scrolls to the top of the history card and
+                  not to whichever row happened to be first. */}
+              <div ref={historyRef} className="lg:col-span-7 xl:col-span-8">
+                {table}
+              </div>
             </div>
             {detail}
           </div>
