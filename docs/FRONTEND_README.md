@@ -313,15 +313,14 @@ Three details are worth stating because they are not guessable:
   stored row — and it is also the way to lose a report by accident.
 - **Logs reach `raw_logs` three ways**: a dropped file, a picked file, or
   typing. All three write the same state, because the API takes log *text* and
-  has no notion of a file. The drop zone accepts `.txt`, `.json` and `.log`,
-  matched on the **extension** rather than on `File.type` — browsers report `""`
-  for `.log` everywhere and `application/json` only sometimes, so a MIME check
-  would reject the project's own `sample_logs/*.log` fixtures. Files are capped
-  at 8 MB, which guards the *browser* rather than the pipeline: the text lands
-  in a controlled `<textarea>` that repaints on every keystroke, and the
-  rejection message points at `POST /api/investigate` for the full-corpus case.
-  An **Insert sample logs** button drops in four Pino JSON lines carrying one
-  ERROR, so a first run produces a real signature instead of an empty report.
+  has no notion of a file. The drop zone accepts `.txt` and `.log`, matched on
+  the **extension** rather than on `File.type` — browsers report `""` for `.log`
+  everywhere, so a MIME check would reject the project's own `sample_logs/*.log`
+  fixtures. Files are capped at **16 MB**; see
+  [Upload constraints](#upload-constraints) for how that number was chosen and
+  why `.json` is not on the list. An **Insert sample logs** button drops in four
+  Pino JSON lines carrying one ERROR, so a first run produces a real signature
+  instead of an empty report.
 - **The submit button is disabled, not the request rejected.** A blank name or
   blank logs is a 422 server-side; checking `trim()` locally turns that into a
   disabled button rather than a round trip that fails.
@@ -339,6 +338,82 @@ toggle.
 `App.handleCompleted` refetches the history **only** when `db_persisted` is
 true. Refetching for an unstored run would redraw the same rows and imply the
 record had landed.
+
+### Upload constraints
+
+Two rules govern what the drop zone and file picker accept.
+
+#### Accepted extensions: `.txt` and `.log`
+
+The `accept` attribute, the drop validation and the error messages all derive
+from one `ACCEPTED_EXTENSIONS` constant, so there is a single place to change.
+`.json` was removed, and removing it costs nothing measurable:
+
+- The API takes log **text**. A JSON-lines corpus is still a log file, and every
+  JSON-shaped fixture in `sample_logs/` is named for what it is — `json.log`,
+  `java_spring_boot_json.log`, `java_spring_boot_large.json.log`. All of them
+  end in `.log` and all of them still pass. **Zero repository fixtures are
+  excluded by the change.**
+- A bare `.json` file is almost always a single pretty-printed document rather
+  than one object per line. The parser would read that as one unparseable entry
+  and the run would complete over nothing. Refusing it at the picker is a better
+  answer than a confidently empty investigation.
+
+Matching is still on the extension rather than on `File.type`, because browsers
+report `""` for `.log` on every platform — a MIME check would reject exactly the
+fixtures most likely to be dropped here.
+
+#### Maximum upload size: 16 MB
+
+Raised from 8 MB. Four candidate constraints were measured, and three of them
+turned out not to bind:
+
+| Constraint | Measured | Binds? |
+| --- | --- | --- |
+| **Backend payload limit** | FastAPI, uvicorn and h11 impose no body-size ceiling, and none is configured anywhere in `backend/` | No — there is no server-side cap at all |
+| **Vite dev proxy** | Streams the body rather than buffering it; its only relevant bound is the 15-minute timeout in `vite.config.ts` | No |
+| **JSON expansion on the wire** | `raw_logs` is escaped into a JSON body: **1.003×** for plain-text corpora, **1.142×** for JSON-lines. 16 MB of logs is ≤ ~18.3 MB on the wire | No |
+| **JS-side work per render** | Scaling the 3.5 MB Spring Boot benchmark up: `split('\n')` **3.7 ms** and `JSON.stringify` **36.5 ms** at 21 MB | No |
+| **DOM text layout in a controlled `<textarea>`** | Not measurable in Node; grows faster than the heap does | **Yes — this is the limit** |
+
+Measured JS costs, for reference:
+
+| Payload | `split('\n')` | `JSON.stringify` | UTF-16 heap | Lines |
+| --- | --- | --- | --- | --- |
+| 3.5 MB | 0.3 ms | 5.3 ms | 7.0 MB | 7,797 |
+| 7.0 MB | 1.3 ms | 12.3 ms | 13.9 MB | 15,593 |
+| 13.9 MB | 2.5 ms | 23.9 ms | 27.9 MB | 31,185 |
+| 20.9 MB | 3.7 ms | 36.5 ms | 41.8 MB | 46,777 |
+
+So the wire, the server and the arithmetic all have room to spare, and the
+binding constraint is the browser laying out text in a controlled `<textarea>`:
+React reassigns `value`, and the browser re-lays out the whole document.
+
+**16 MB** is where those trade off:
+
+- It clears the largest corpus in `sample_logs/` (`java_spring_boot_large.json.log`,
+  3.48 MB) by **4.6×**, leaving room for the benchmark datasets to grow.
+- Peak transient footprint stays bounded: ~32 MB for the UTF-16 string, a
+  comparable DOM copy, and a ~37 MB body string alive only across the
+  `JSON.stringify` in `handleSubmit`.
+- Per-render work stays inside a frame budget. `lineCount` is now memoized on
+  `rawLogs` — unmemoized it re-split the whole payload on **every** render, so
+  at 16 MB toggling a checkbox meant re-splitting 60,000 lines.
+
+**The accepted trade, stated plainly:** typing into a *loaded* 16 MB payload is
+sluggish. That is deliberate rather than an oversight — a file that size is
+loaded to be submitted, not hand-edited, and Clear stays responsive either way.
+If the editor is the wrong tool for a corpus, the rejection message says so and
+points at the API:
+
+> `java_spring_boot_huge.log is 24.0 MB, which is over the 16.0 MB limit of this
+> editor by 8.0 MB. The limit is the browser's, not the pipeline's — the
+> analysis itself has no size ceiling. Either split the file, or post it
+> straight to POST /api/investigate for a full-corpus run.`
+
+The message names the real size, the overage and the reason, because the most
+likely next question after a rejection is "then how do I analyse this file at
+all" — and the answer is that the pipeline will take it happily.
 
 ### History & search
 
@@ -506,8 +581,8 @@ volume:
   score is `null` — one more place the not-measured/measured-as-zero distinction
   must not be collapsed.
 
-**Tab 2 — Pipeline Execution Graph.** A React Flow canvas, 420px tall, drawing
-the seven stages a stored report carries evidence for.
+**Tab 2 — Pipeline Execution Graph.** A React Flow canvas, 460px tall, drawing
+the eight stages a stored report carries evidence for.
 
 The framing matters more than the drawing. A stored `structured_report` does not
 carry `completed_stages` — that channel lives in graph state and never reaches
@@ -519,28 +594,148 @@ artifact that stage owns is present and intact, and what that stage recorded in
 therefore evidence-based rather than reported, and clicking a stage opens an
 inspector that names the evidence so a reader can disagree with it.
 
-| Tier | Colour | Meaning |
+**Status answers exactly one question: did this stage execute?** There are four
+outcomes and none of them describes data quality.
+
+| Status | Label | Colour | Meaning | Applies to |
+| --- | --- | --- | --- | --- |
+| `ok` | **Completed** | `#34D399` emerald | Ran and published its artifact | every stage |
+| `error` | **Artifact missing** | `#F87171` red | The artifact the stage owns is absent | every stage |
+| `skipped` | **Skipped** | `#6B7280` muted, dimmed + dashed | The conditional detour was not taken | `web_search` only |
+| `pending` | **Undetermined** | `#38BDF8` info, dimmed + dashed | No evidence either way | `web_search` only |
+
+Each stage's status is derived from only its own artifact and its own notes, so
+no wrong guess can cascade. Edges are coloured by the stage they *leave*, so a
+stage whose artifact is missing visibly taints everything downstream of it, and
+an edge with an inactive stage at *either* end is dimmed — colouring by source
+alone would draw the loop's return leg at full strength into a bypassed box.
+
+**`write_to_db` is not inferred at all**, and that is worth stating: the report
+is being read back *out of* the table, so the write demonstrably succeeded. No
+other stage has evidence that direct.
+
+#### Why there is no `DEGRADED` tier
+
+There used to be a fifth tier — amber `Degraded` — and removing it was a
+correctness fix rather than a simplification.
+
+It fired on **benign data observations**: logs that carried no timestamp, a
+search that found nothing above the relevance floor, an LLM pass that fell back
+to arithmetic, a model that declined to name a root cause. In an observability
+UI, "degraded" means an operational fault, and none of those is one. The node
+ran, returned, and published exactly what the data supported. A run over a
+perfectly healthy application whose logs simply lacked timestamps would light up
+amber and imply something had broken.
+
+The cost of that is not just a wrong label. Amber on a healthy run trains a
+reader to ignore amber, which is precisely what makes them miss the one case
+that does matter.
+
+**The observations did not go away — only the badge did.** Every finding is
+still computed, still worded exactly as it was, and still displayed:
+
+| Before | Now |
+| --- | --- |
+| Badge: amber **DEGRADED** | Badge: green **COMPLETED** |
+| Reason: "70 entries carried no timestamp." | Reason: **unchanged** |
+| Notes: every note the stage wrote | Notes: **unchanged** |
+
+So the inspection drawer is untouched. Clicking a stage still shows its `reason`
+line and every one of its investigation notes verbatim — "70 entries carried no
+timestamp", "nothing cleared the relevance floor", "the reasoning pass could not
+reach a model — counts and templates are exact, the interpretation is missing".
+What changed is that a reader now finds them by opening a stage that says
+`Completed`, instead of being alarmed into it by a colour implying a fault.
+
+The underlying split is the point, and it is enforced in the type:
+**`status` is about execution, `reason` is about data.** Two stages showing the
+same `Completed` badge routinely carry very different `reason`s. Conflating the
+two is what produced the misleading badge in the first place.
+
+Two boundaries worth naming, because they are deliberately *not* part of this
+change:
+
+- **`error_analysis` with nothing to analyse is `Completed`, not `Skipped`.**
+  The node's own note says "Error analysis skipped: …", but it ran and published
+  an `error_summary`; `Skipped` is reserved for a stage the router bypassed. Its
+  reason was reworded to "Ran with nothing to fingerprint — the payload carried
+  no error- or warning-level entries to analyse", so the badge and the sentence
+  under it agree.
+- **Amber is still the right colour elsewhere.** `severity.warn` continues to
+  flag data-quality notes in `StructuredReportView`'s Investigation Notes panel
+  and to render `warning`-severity anomalies, which come from the payload's own
+  `info | warning | critical` vocabulary. Only the *node execution status*
+  taxonomy dropped it.
+
+#### The `web_search` node and its conditional states
+
+`web_search` is drawn, and it is the exception that shapes the rest of the view.
+
+It was previously left out on the grounds that a stored report carries no
+evidence of it. That was half right, and the half that was wrong is what this
+feature rests on: the node writes no report **section** — `search_context` and
+`search_queries` are working state and never reach the database — but it does
+write `investigation_notes`, every one prefixed `"Web search: "`, and those
+notes are snapshotted into `synthesis` like every other node's. The evidence
+exists; it is simply of a weaker kind, and the two extra tiers are how that
+weakness is made visible rather than hidden.
+
+**Topology.** `web_search` sits directly *above* `error_analysis` rather than
+after it, because that is the only placement that tells the truth: it is not a
+step between error analysis and the fan-in, it is a detour off `error_analysis`
+that loops straight back into it. Placing it in the flow would draw a stage
+every run passes through, when most runs never enter it at all. Both legs of the
+loop are drawn — `graph.py` builds them with
+`add_conditional_edges("error_analysis", …)` and
+`add_edge("web_search", "error_analysis")` — because a single arrow in would
+leave a reader asking where the output goes, and the answer (back into the stage
+it came from, for a second pass) is the most surprising thing about this graph.
+The two legs anchor on offset vertical handles so they read as two lines rather
+than one ambiguous stroke, and each carries a short label (`needs research`,
+`pass 2`); they are the only labelled edges, since they are the only ones whose
+meaning is not obvious from the boxes they join.
+
+**How the three conditional states are decided.** The branches are ordered by
+decreasing certainty:
+
+| Evidence in `investigation_notes` | Status | `reason` shown in the drawer |
 | --- | --- | --- |
-| `ok` | `#34D399` | Ran and published its artifact intact |
-| `warning` | `#FBBF24` | Ran and published, but degraded — an LLM pass that fell back to arithmetic, a data-quality caveat, a root cause the model declined to name |
-| `error` | `#F87171` | The artifact is missing |
+| A note containing `Web search: unavailable` | `ok` | Ran, but no API key / no SDK / no network |
+| `Web search: ran N queries and retrieved 0 relevant…` | `ok` | Ran, but nothing cleared the relevance floor |
+| The summary line, plus any `…query … failed…` note | `ok` | Partial — some queries failed, context incomplete |
+| `Web search: ran N queries and retrieved M relevant…`, M > 0 | `ok` | Ran, and fed M snippets into the second pass |
+| `Web search: …` notes present but no recognized summary | `ok` | Outcome stated in a form this view does not recognize |
+| **No** `Web search:` notes, but the run recorded other notes | `skipped` | **Bypassed** — dimmed and dashed |
+| **No** notes recorded at all | `pending` | **Undetermined** — dimmed and dashed |
 
-The amber tier is the one that earns its keep: every LLM node degrades rather
-than raises, so a degraded run and a healthy one publish an identical shape and
-are indistinguishable from the report's structure alone. Each stage's status is
-derived from only its own artifact and its own notes, so no wrong guess can
-cascade. Edges are coloured by the stage they *leave*, so a degraded stage
-visibly taints everything downstream of it; the four dashed edges are the ones
-that are conditional or bypassable at runtime — notably
-`error_analysis → prepare_output`, which in the real graph may first detour
-through `web_search`.
+The first five rows all read `Completed` on the badge and differ only in the
+`reason` line, which is the taxonomy working as intended: each of them is a node
+that ran to completion, and what separates them is what it *found*, not whether
+it worked. The 0-snippets case in row two is the canonical example — a search
+that legitimately turns up nothing relevant is a successful search.
 
-Two absences are deliberate and stated in the UI itself. **`web_search` is not
-drawn**: it writes no report section, so a stored report carries no evidence of
-whether it ran, and drawing it would mean drawing a status with nothing behind
-it. And **`write_to_db` is not inferred at all** — the report is being read back
-*out of* the table, so the write demonstrably succeeded. No other stage has
-evidence that direct.
+The last two rows are the point. Both mean "produced nothing", and collapsing
+them would render *we don't know* as *it didn't run*:
+
+- **Skipped** is a positive finding about a detour not taken. The run kept
+  notes, none are the search node's, so `error_analysis` pass 1 asked for no
+  lookups (or the caller left `enable_web_search` off) and the router went
+  straight to `prepare_output`. Nothing went wrong, which is why it is dimmed
+  rather than red.
+- **Pending** is an absence of evidence. The report records no notes at all, so
+  there is nothing to read the absence of. Every other stage can fall back to
+  "is my artifact present?"; this one owns no artifact and cannot.
+
+Both are rendered by dimming the box to 55% opacity and switching its border to
+dashed — drawn back rather than flagged, so a bypassed detour reads as inactive
+at a glance without spending a fourth alarm colour on a non-problem. The box
+stays legible and stays clickable; its inspector explains which of the two it is
+and why.
+
+The counts in the `ok` and `warning` reasons are parsed out of the summary note
+by pattern rather than read from a field, because the note is the only place
+they exist. All six wordings the node and its client emit were checked against
+`graph_library/web_search/{node,client}.py`.
 
 The canvas is an inspector rather than an editor: panning, zooming and the
 controls are available because they help on a narrow screen, but
@@ -555,7 +750,7 @@ dragging a node would only let a reader misrepresent a topology that is fixed by
 | Health | `Header`, `role="status" aria-live="polite"` | **Checking…** (blue, pulsing), **System Online** (emerald), **Backend Offline** (red) |
 | Score | Each history row, `ScoreBadge` | emerald ≥ 80, amber ≥ 50, red below, grey `n/a` when unmeasured |
 | Run result | Below the form | emerald *Investigation stored*, amber *Analysis ran, not stored* |
-| Stage | Each node on the pipeline canvas | *Completed* / *Degraded* / *Artifact missing* |
+| Stage | Each node on the pipeline canvas | *Completed* / *Artifact missing*, plus *Skipped* / *Undetermined* on `web_search` |
 
 The health badge distinguishes three states rather than two on purpose:
 reporting "Backend Offline" before the first request has answered would tell the
@@ -748,7 +943,9 @@ tabs of the inspection panel.
 | 12 | `gemini test 3` | `typescript_pino_recovery.log` | — | deep | off | Success |
 
 Test 11 is also the largest payload in the sequence, and is what exercised the
-form's 8 MB file ceiling being comfortably clear of a real benchmark dataset.
+form's file ceiling being comfortably clear of a real benchmark dataset. It ran
+against the 8 MB limit in force at the time; the limit is now 16 MB, so the
+3.48 MB corpus clears it by 4.6× rather than 2.3×.
 
 ### Tests 13–15 — DeepSeek
 
@@ -794,18 +991,42 @@ $ npm run build
 vite v8.2.2 building client environment for production...
 ✓ 184 modules transformed.
 dist/index.html                   0.46 kB │ gzip:   0.30 kB
-dist/assets/index-BdHKXWOR.css   36.25 kB │ gzip:   7.30 kB
-dist/assets/index-CsJuYSv7.js   441.13 kB │ gzip: 135.08 kB
-✓ built in 318ms
+dist/assets/index-BgkRMU19.css   36.31 kB │ gzip:   7.31 kB
+dist/assets/index-ChrPsdDM.js   444.59 kB │ gzip: 136.28 kB
+✓ built in 322ms
 # exit 0
 ```
 
 `oxlint` 1.81.0 reports zero errors and zero warnings, and `tsc -b --force`
 completes with no diagnostics — so the type-check is genuinely clean rather than
-served from the build-info cache.
+served from the build-info cache. The build was run against a removed `dist/`,
+so the output above is a full rebuild rather than an incremental one.
 
-One note on the bundle: `dist/assets/index-*.js` is 441 kB raw / 135 kB gzipped,
+One note on the bundle: `dist/assets/index-*.js` is 445 kB raw / 136 kB gzipped,
 and most of that is `@xyflow/react`, which is loaded eagerly. That is a
 deliberate non-issue for a locally served development tool, but it is the first
 thing to code-split (behind the Pipeline Execution Graph tab) if this app is
 ever served over a network where the first paint matters.
+
+### What was not verified
+
+The Step 7 changes were verified by type-check, lint, a full production build,
+and static checks over the graph constants — every edge handle resolves to a
+declared handle, no two stage boxes overlap at their positions, and all six note
+wordings the search node emits were matched against `graph_library/web_search/`.
+
+The `DEGRADED` removal was additionally checked by making the compiler do the
+work: narrowing the `StageStatus` union turned every affected site into a type
+error, so all fourteen were enumerated rather than found by search. The
+statuses now assigned across the whole module are exactly `ok` (22 sites),
+`error` (6), `skipped` (1) and `pending` (1), with no `warning` anywhere, and
+the legend renders four swatches. Every `reason` string was re-read to confirm
+it still parses as a sentence under a `Completed` badge — one did not, and was
+reworded (see the `error_analysis` note above).
+
+They were **not** verified in a browser: no headless browser is available in
+this environment, and exercising the `web_search` tiers end to end needs a live
+backend, a PostgreSQL with stored reports, and one run each with
+`enable_web_search` on and off. The conditional states and the new colour
+assignments are therefore correct by construction and by static check, not by
+observation.
