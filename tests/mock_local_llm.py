@@ -112,7 +112,9 @@ import asyncio
 import json
 import os
 import re
+import sys
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
@@ -1517,37 +1519,83 @@ DEFAULT_MOCK_PORT = 8000
 
 
 def _load_env_file() -> None:
-    """Populate ``os.environ`` from ``.env``, if there is one to read.
+    """Populate ``os.environ`` from the project's resolved environment file.
 
     This module is an entry point when it is run directly, and populating the
     environment is an entry point's job — the same division ``backend.py`` and
     ``init_db.py`` observe, and the reason no module under ``graph_library/``
     calls ``load_dotenv`` itself.
 
-    ``python-dotenv`` is imported here rather than reached for through
-    ``graph_library.write_to_db.load_env_file``: running this file directly puts
-    ``tests/`` on ``sys.path`` instead of the repository root, so importing the
-    package would depend on it having been installed. This module deliberately
-    imports nothing it stands in front of, and that holds here too.
+    The *selection* rule — ``ENV_FILE``, else ``.env.docker`` under a container
+    indicator, else ``.env`` — is deliberately not reimplemented here. It is
+    delegated to :mod:`graph_library.env_files`, because two services that
+    disagree about which file to read is the precise failure this reporting
+    exists to prevent, and a second copy of the rule is how they would come to
+    disagree.
 
-    Never raises. A missing package or an unreadable file leaves the
-    environment as the shell supplied it, which may well already be complete.
+    That import needs a hand. Running this file directly puts ``tests/`` on
+    ``sys.path`` rather than the repository root, so ``graph_library`` is only
+    importable when the project happens to be pip-installed. The repository root
+    is therefore added explicitly, here in the entry path and nowhere else — the
+    ``app`` object and :func:`make_transport` keep their promise of importing
+    nothing from the code this mock stands in front of, which is what lets the
+    test suite import this module without dragging the graph in behind it.
+
+    Never raises. If the shared module cannot be reached at all, this falls back
+    to reading ``.env`` directly, so the server still starts and still says what
+    it did.
     """
-    try:
-        from dotenv import find_dotenv, load_dotenv
+    repo_root = str(Path(__file__).resolve().parent.parent)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
 
-        # ``usecwd`` because the default search starts at *this* file's
-        # directory, which is ``tests/`` — the repository root is one level up.
-        # ``override=False`` (the default) is what lets a real shell export win
-        # over a checked-in placeholder.
-        load_dotenv(find_dotenv(usecwd=True))
+    try:
+        from graph_library.env_files import load_env_file
     except ImportError:
-        print("[mock-llm] python-dotenv is not installed; reading the environment as-is", flush=True)
-    except Exception as exc:  # noqa: BLE001 - the environment may already be complete
+        _load_env_file_fallback()
+        return
+
+    # Prints its own ``[Config] Sourced environment variables from ...`` line.
+    load_env_file()
+
+
+def _load_env_file_fallback() -> None:
+    """Read ``.env`` with no help from the rest of the project.
+
+    Reached only when ``graph_library`` is unreachable — a copy of this file
+    lifted out of the repository, say. It honours ``ENV_FILE`` and the Docker
+    default so the two paths cannot disagree about *which* file to read, but it
+    does not reproduce the container detection: without the shared module this
+    is a degraded mode, and it says so rather than pretending otherwise.
+    """
+    name = (os.getenv("ENV_FILE") or "").strip() or ".env"
+    candidate = Path(__file__).resolve().parent.parent / name
+
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
         print(
-            f"[mock-llm] could not read a .env file ({type(exc).__name__}); continuing",
+            "[Config] python-dotenv is not installed and graph_library is "
+            f"unreachable; {name} was NOT loaded",
             flush=True,
         )
+        return
+
+    if not candidate.is_file():
+        print(
+            f"[Config] graph_library is unreachable and {name} does not exist "
+            f"at {candidate}; environment left as supplied",
+            flush=True,
+        )
+        return
+
+    load_dotenv(candidate)
+    print(
+        f"[Config] Sourced environment variables from {name} "
+        "(fallback loader — graph_library was unreachable, so no container "
+        "detection was performed)",
+        flush=True,
+    )
 
 
 def _env_int(name: str, default: int) -> int:
@@ -1647,12 +1695,27 @@ def main() -> int:
     _load_env_file()
     host, port = resolve_bind_address()
 
-    # The URL to point the graph at is printed rather than left to be inferred,
-    # because it is the value that has to match on both sides and the /v1
-    # suffix is easy to forget.
-    advertised = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
     print(f"[mock-llm] LogSherlock mock local LLM listening on http://{host}:{port}", flush=True)
-    print(f"[mock-llm] point the graph at it with: LOCAL_LLM_BASE_URL=http://{advertised}:{port}/v1", flush=True)
+
+    # What the graph will actually dial. Echoed from the environment when it is
+    # set, rather than reconstructed from the bind address: under the
+    # containerized file the two legitimately differ — this process binds
+    # 0.0.0.0 and the graph reaches it as http://mock-llm:8000/v1 — so
+    # rebuilding the URL from the host would print a loopback address that is
+    # right locally and wrong in exactly the deployment the file exists for.
+    # Reporting the configured value is also what makes a port mismatch visible
+    # here, beside the port actually being served.
+    configured = (os.getenv("LOCAL_LLM_BASE_URL") or "").strip()
+    if configured:
+        print(f"[mock-llm] the graph is configured to dial: LOCAL_LLM_BASE_URL={configured}", flush=True)
+    else:
+        advertised = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+        print(
+            f"[mock-llm] LOCAL_LLM_BASE_URL is unset; point the graph at it with: "
+            f"http://{advertised}:{port}/v1",
+            flush=True,
+        )
+
     print("[mock-llm] answers 4 structured-output schemas offline — no API key, no network", flush=True)
 
     try:
