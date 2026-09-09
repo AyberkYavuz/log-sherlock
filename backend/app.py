@@ -25,6 +25,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from graph_library.env_files import loaded_env_file
+
 from .config import ApiSettings
 from .dependencies import SERVICE_FACTORY_ATTRIBUTE
 from .errors import register_exception_handlers
@@ -63,6 +65,32 @@ def _build_lifespan(settings: ApiSettings, factory: ServiceFactory):
             ", ".join(settings.cors_origins),
             f"{settings.graph_timeout:.0f}s" if settings.graph_timeout else "none",
         )
+
+        # Which file these settings came from, reported through the *logger*
+        # rather than stdout. The entry point already printed it, but that print
+        # happens before logging is configured, so it never reaches a log file
+        # or an aggregator. This line is the one a deployment actually captures,
+        # and "the wrong env file" is the first thing to rule out when a running
+        # service is configured in a way nobody expects.
+        #
+        # Read rather than resolved: this reports what was loaded, so it cannot
+        # disagree with the process's real configuration. ``None`` means no
+        # entry point loaded a file — the normal case under a test client, or
+        # when an orchestrator supplies the environment directly.
+        environment = loaded_env_file()
+        if environment is None:
+            logger.info(
+                "Environment file: none loaded in this process (variables read "
+                "as supplied)"
+            )
+        else:
+            logger.info(
+                "Environment file: %s (%d keys, %s, loaded=%s)",
+                environment.name or "(none found)",
+                environment.key_count,
+                environment.selected_by,
+                environment.loaded,
+            )
         if isinstance(factory, DefaultServiceFactory) and isinstance(
             factory.repository_factory, PostgresRepositoryFactory
         ):
