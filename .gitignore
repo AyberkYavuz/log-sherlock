@@ -1,5 +1,6 @@
 # Keep environment secrets local
 .env
+.env.docker
 .env.local
 .env.*.local
 
