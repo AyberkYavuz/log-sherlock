@@ -86,11 +86,21 @@ well-formed response.
 
 Run it standalone::
 
-    python -m uvicorn tests.mock_local_llm:app --port 8000
+    python3 tests/mock_local_llm.py
 
-then point the node at it::
+The bind address comes from the environment rather than from a flag, so the one
+``.env`` that tells the graph where to dial is also the one that tells this
+server where to listen::
 
+    MOCK_LLM_HOST=127.0.0.1
+    MOCK_LLM_PORT=8000
     LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1
+
+See :func:`resolve_bind_address` for how those three interact, and why a
+mismatch between the last two is worth a warning rather than a silent failure.
+The equivalent uvicorn invocation still works and ignores the environment::
+
+    python3 -m uvicorn tests.mock_local_llm:app --port 8000
 
 Or use it in-process, without a socket, via :func:`make_transport` — see
 ``tests/test_error_analysis.py``.
@@ -100,9 +110,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from collections.abc import Iterator
 from typing import Any, NamedTuple
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Response
@@ -1487,7 +1499,176 @@ def make_transport() -> httpx.BaseTransport:
     return SyncASGITransport(app)
 
 
-if __name__ == "__main__":  # pragma: no cover - manual entry point
+# ---------------------------------------------------------------------------
+# Standalone server entry point
+# ---------------------------------------------------------------------------
+# The bind address is read from the environment rather than hardcoded, because
+# the port is a *shared* fact: the graph dials whatever ``LOCAL_LLM_BASE_URL``
+# names, and a server listening somewhere else fails as
+# ``httpx.ConnectError: [Errno 61] Connection refused`` from every LLM node
+# while this terminal logs nothing at all — the client is knocking on a closed
+# port, so there is no request to report.
+
+#: Bind address defaults. ``127.0.0.1`` matches
+#: ``llm_factory.DEFAULT_LOCAL_BASE_URL``, so the mock serves the port the graph
+#: would use even with every variable unset.
+DEFAULT_MOCK_HOST = "127.0.0.1"
+DEFAULT_MOCK_PORT = 8000
+
+
+def _load_env_file() -> None:
+    """Populate ``os.environ`` from ``.env``, if there is one to read.
+
+    This module is an entry point when it is run directly, and populating the
+    environment is an entry point's job — the same division ``backend.py`` and
+    ``init_db.py`` observe, and the reason no module under ``graph_library/``
+    calls ``load_dotenv`` itself.
+
+    ``python-dotenv`` is imported here rather than reached for through
+    ``graph_library.write_to_db.load_env_file``: running this file directly puts
+    ``tests/`` on ``sys.path`` instead of the repository root, so importing the
+    package would depend on it having been installed. This module deliberately
+    imports nothing it stands in front of, and that holds here too.
+
+    Never raises. A missing package or an unreadable file leaves the
+    environment as the shell supplied it, which may well already be complete.
+    """
+    try:
+        from dotenv import find_dotenv, load_dotenv
+
+        # ``usecwd`` because the default search starts at *this* file's
+        # directory, which is ``tests/`` — the repository root is one level up.
+        # ``override=False`` (the default) is what lets a real shell export win
+        # over a checked-in placeholder.
+        load_dotenv(find_dotenv(usecwd=True))
+    except ImportError:
+        print("[mock-llm] python-dotenv is not installed; reading the environment as-is", flush=True)
+    except Exception as exc:  # noqa: BLE001 - the environment may already be complete
+        print(
+            f"[mock-llm] could not read a .env file ({type(exc).__name__}); continuing",
+            flush=True,
+        )
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer variable, treating empty or malformed as absent.
+
+    A bad port is a configuration mistake, not a reason to refuse to start: the
+    server comes up on the default and prints the address it actually bound, so
+    the mistake is visible in the output rather than only in its consequences.
+    This mirrors ``backend/config.py`` and
+    ``graph_library/write_to_db/config.py``, which read their own integers the
+    same way.
+    """
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"[mock-llm] {name}={raw!r} is not an integer; using {default}", flush=True)
+        return default
+
+
+def _port_from_base_url() -> int | None:
+    """The port ``LOCAL_LLM_BASE_URL`` names, or ``None`` if it names none.
+
+    Only the port is taken from that URL, never the host. The two answer
+    different questions: the URL is where a *client* dials, and under Docker it
+    is a service alias (``http://mock-llm:8000/v1``) that this process cannot
+    bind to. Where to listen is ``MOCK_LLM_HOST``'s decision alone.
+    """
+    raw = (os.getenv("LOCAL_LLM_BASE_URL") or "").strip()
+    if not raw:
+        return None
+    try:
+        return urlsplit(raw).port
+    except ValueError:
+        # A malformed authority — ``http://host:notaport/v1``. Ignored rather
+        # than raised: this is only ever a source of a *default*.
+        print(f"[mock-llm] LOCAL_LLM_BASE_URL={raw!r} has no readable port; ignoring it", flush=True)
+        return None
+
+
+def resolve_bind_address() -> tuple[str, int]:
+    """Decide where to listen, from the environment.
+
+    Resolution order, and why:
+
+        * **host** — ``MOCK_LLM_HOST``, else ``127.0.0.1``. Loopback locally;
+          ``0.0.0.0`` in a container, where a loopback-bound server is
+          unreachable from a sibling service and a published port answers
+          nothing.
+        * **port** — ``MOCK_LLM_PORT``, else the port in
+          ``LOCAL_LLM_BASE_URL``, else ``8000``. Falling back to the URL means
+          a developer who only ever set the variable the graph reads still gets
+          a server on the matching port.
+
+    When both are set and disagree, the explicit ``MOCK_LLM_PORT`` wins and the
+    conflict is reported. That combination is the one misconfiguration this
+    server cannot otherwise reveal: it starts cleanly, logs nothing, and every
+    LLM node reports a connection error against a port nobody is serving.
+
+    Returns:
+        A ``(host, port)`` pair, always usable — every unreadable value falls
+        back rather than raising.
+    """
+    host = (os.getenv("MOCK_LLM_HOST") or "").strip() or DEFAULT_MOCK_HOST
+
+    url_port = _port_from_base_url()
+    explicit_port = (os.getenv("MOCK_LLM_PORT") or "").strip()
+
+    if explicit_port:
+        port = _env_int("MOCK_LLM_PORT", url_port or DEFAULT_MOCK_PORT)
+        if url_port is not None and url_port != port:
+            print(
+                f"[mock-llm] WARNING: MOCK_LLM_PORT={port} but "
+                f"LOCAL_LLM_BASE_URL points at port {url_port}. Serving "
+                f"{port}; the graph will dial {url_port} and get a connection "
+                "error. Set the two to the same port.",
+                flush=True,
+            )
+    else:
+        port = url_port or DEFAULT_MOCK_PORT
+
+    return host, port
+
+
+def main() -> int:
+    """Serve the mock on the address the environment names.
+
+    Returns:
+        A process exit code. ``0`` on a clean shutdown, ``1`` when the port
+        could not be bound — reported as one actionable sentence rather than as
+        a traceback whose last frame is inside uvicorn.
+    """
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    _load_env_file()
+    host, port = resolve_bind_address()
+
+    # The URL to point the graph at is printed rather than left to be inferred,
+    # because it is the value that has to match on both sides and the /v1
+    # suffix is easy to forget.
+    advertised = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    print(f"[mock-llm] LogSherlock mock local LLM listening on http://{host}:{port}", flush=True)
+    print(f"[mock-llm] point the graph at it with: LOCAL_LLM_BASE_URL=http://{advertised}:{port}/v1", flush=True)
+    print("[mock-llm] answers 4 structured-output schemas offline — no API key, no network", flush=True)
+
+    try:
+        uvicorn.run(app, host=host, port=port)
+    except KeyboardInterrupt:  # pragma: no cover - interactive
+        print("\n[mock-llm] Shutting down.", flush=True)
+        return 0
+    except OSError as exc:
+        # Overwhelmingly "address already in use", which the default traceback
+        # buries under a socket call stack.
+        print(f"\n[mock-llm] FAILED to bind {host}:{port}: {exc}", flush=True)
+        print("[mock-llm] Another process is using that port. Set MOCK_LLM_PORT to a free one.", flush=True)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - manual entry point
+    raise SystemExit(main())
