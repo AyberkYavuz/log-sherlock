@@ -70,10 +70,17 @@ def main() -> int:
         format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
     )
 
-    print(f"LogSherlock API starting on http://{settings.bind_target}")
-    print(f"  Interactive docs: http://{settings.bind_target}/docs")
-    print(f"  Health check:     http://{settings.bind_target}/api/health")
-    print(f"  Allowed origins:  {', '.join(settings.cors_origins)}")
+    # ``flush`` because stdout is block-buffered whenever it is not a terminal,
+    # which is every case that matters here: a log file, a supervisor, a
+    # container, a CI job. Without it these four lines sit in the buffer while
+    # uvicorn's own logging (which goes to stderr) streams past them, so the
+    # banner naming the resolved host, port and origins appears only when the
+    # process exits — precisely when it is no longer useful. The same reason
+    # ``graph_library.write_to_db.db.announce`` flushes.
+    print(f"LogSherlock API starting on http://{settings.bind_target}", flush=True)
+    print(f"  Interactive docs: http://{settings.bind_target}/docs", flush=True)
+    print(f"  Health check:     http://{settings.bind_target}/api/health", flush=True)
+    print(f"  Allowed origins:  {', '.join(settings.cors_origins)}", flush=True)
 
     try:
         uvicorn.run(
