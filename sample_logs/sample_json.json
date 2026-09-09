@@ -1,0 +1,6 @@
+[
+  {"level":30,"time":"2026-07-29T10:59:25.610Z","name":"api","msg":"Incoming request POST /bookings"},
+  {"level":40,"time":"2026-07-29T10:59:25.808Z","name":"payment","msg":"Payment provider slow: 1840ms"},
+  {"level":50,"time":"2026-07-29T10:59:26.144Z","name":"payment","msg":"Payment provider unavailable: connection refused to 10.0.4.12:8443"},
+  {"level":30,"time":"2026-07-29T10:59:26.150Z","name":"api","msg":"Request completed with status 503"}
+]
