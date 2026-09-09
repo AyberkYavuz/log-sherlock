@@ -58,32 +58,31 @@ def announce(message: str) -> None:
 
 
 def load_env_file() -> None:
-    """Load ``.env`` into the environment, if ``python-dotenv`` is installed.
+    """Load the resolved environment file, reporting which one it was.
 
-    A no-op when the package is absent or the file does not exist, because the
-    variables may perfectly well be exported by the shell, by a Compose
-    ``environment:`` block or by a secrets manager — none of which involve a
-    file. ``override=False`` is the default and is what this relies on: a real
-    credential already in the environment always wins over a checked-in
-    placeholder.
+    A thin delegate to :func:`graph_library.env_files.load_env_file`, which owns
+    the selection rule for the whole project: ``ENV_FILE`` if it names a file,
+    else ``.env.docker`` when a container indicator is present, else ``.env``.
+    That logic used to live here, and here was the wrong home for it — this
+    package persists investigations, and every other entry point had to either
+    import a database module to read its configuration or grow a second,
+    silently divergent copy of the rule.
 
-    Never raises. Locating and reading a file is the one step here that can
-    fail for reasons that have nothing to do with the database — an unreadable
-    file, a permission boundary — and none of them are worth failing a
-    persistence step that has perfectly good environment variables already.
+    Kept as a name rather than removed because it is the function
+    ``init_db.py`` imports, and because "load the project's environment file" is
+    a reasonable thing to reach for from this package's public surface.
+
+    A no-op when no file is found or ``python-dotenv`` is absent: the variables
+    may perfectly well be exported by the shell, by a Compose ``environment:``
+    block or by a secrets manager, none of which involve a file. Values already
+    in the environment always win over a checked-in placeholder.
+
+    Never raises. Every outcome is reported to stdout and to the logger with a
+    ``[Config]`` prefix, so a run always says which file it read.
     """
-    try:
-        from dotenv import find_dotenv, load_dotenv
+    from graph_library.env_files import load_env_file as _load
 
-        # ``usecwd`` because the default search starts at the *calling
-        # module's* directory, which for this file is inside the package. A
-        # caller run from the project root would otherwise silently pick up no
-        # file at all and fall through to every default in ``DatabaseConfig``.
-        load_dotenv(find_dotenv(usecwd=True))
-    except ImportError:  # pragma: no cover - optional dependency
-        logger.debug("python-dotenv is not installed; reading the environment as-is")
-    except Exception:  # noqa: BLE001 - the environment may already be complete
-        logger.warning("Could not read a .env file; reading the environment as-is")
+    _load()
 
 
 def connect(config: DatabaseConfig) -> Any:
