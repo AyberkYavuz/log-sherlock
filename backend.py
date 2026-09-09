@@ -22,11 +22,20 @@ same ones ``init_db.py`` and the ``write_to_db`` node use. Run ``init_db.py``
 once before the first investigation, or the storage endpoints will report an
 unavailable database against a table that does not exist yet.
 
-**This script loads ``.env``; no module in ``backend/`` does.** That is the rule
-the whole project holds — ``load_dotenv`` mutates ``os.environ`` for the entire
-process, so a library that calls it injects every key in the file, provider
-credentials included, into a process that deliberately did not set them.
-Populating the environment is an entry point's job, and this is the entry point.
+**This script loads the environment file; no module in ``backend/`` does.** That
+is the rule the whole project holds — ``load_dotenv`` mutates ``os.environ`` for
+the entire process, so a library that calls it injects every key in the file,
+provider credentials included, into a process that deliberately did not set
+them. Populating the environment is an entry point's job, and this is the entry
+point.
+
+*Which* file it loads is :mod:`graph_library.env_files`' decision: ``ENV_FILE``
+when it names one, else ``.env.docker`` when a container indicator is present,
+else ``.env``. The choice is printed before anything else happens, prefixed
+``[Config]``, because it is the fact every other line of the startup banner
+depends on::
+
+    ENV_FILE=.env.docker python3 backend.py
 
 A note on the name. This file and the ``backend/`` package share one, and Python
 resolves that in the package's favour: ``import backend`` always finds the
@@ -42,7 +51,7 @@ import sys
 import uvicorn
 
 from backend import ApiSettings, create_app
-from graph_library.write_to_db import load_env_file
+from graph_library.env_files import load_env_file
 
 #: The import string uvicorn needs in order to re-import the application on
 #: every file change. Only used under ``API_RELOAD``: the reloader runs the
@@ -62,7 +71,11 @@ def main() -> int:
         could not start — reported as one actionable sentence rather than as a
         traceback whose last frame is inside uvicorn.
     """
-    load_env_file()
+    # First, and before logging is configured — which is exactly why the loader
+    # reports to stdout itself rather than only through a logger. Every setting
+    # read on the next line comes from whatever this decided to load, so the
+    # ``[Config]`` line has to come first or the banner below cannot be trusted.
+    environment = load_env_file()
     settings = ApiSettings.from_env()
 
     logging.basicConfig(
@@ -81,6 +94,15 @@ def main() -> int:
     print(f"  Interactive docs: http://{settings.bind_target}/docs", flush=True)
     print(f"  Health check:     http://{settings.bind_target}/api/health", flush=True)
     print(f"  Allowed origins:  {', '.join(settings.cors_origins)}", flush=True)
+    # Repeated inside the banner as well as in the ``[Config]`` line above,
+    # because this block is the "what am I actually configured with" summary and
+    # the file every value in it came from belongs in it. Stated as a bare name
+    # here; the reasoning behind the choice is in the line above.
+    print(
+        f"  Environment file: {environment.name or '(none — environment as supplied)'}"
+        f"{'' if environment.loaded or not environment.name else ' [NOT LOADED]'}",
+        flush=True,
+    )
 
     try:
         uvicorn.run(
