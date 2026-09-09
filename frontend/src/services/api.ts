@@ -30,12 +30,53 @@ import type {
 } from '../types/api'
 
 /**
- * Where the API lives. Relative by default, which is what makes the Vite proxy
- * work in development and a single reverse proxy work in production; override
- * with `VITE_API_BASE_URL` for a deployment that serves the two from different
- * origins.
+ * The path every endpoint below is mounted under, server-side
+ * (`backend/app.py`'s `API_PREFIX`).
+ *
+ * Appended by `resolveApiBaseUrl` when the configured base URL does not
+ * already carry it, so `VITE_API_BASE_URL` can be set to the backend *origin*
+ * — which is what an operator naturally writes, and what `.env`, `.env.docker`
+ * and `.env.example` all hold — without every request 404ing on a missing
+ * prefix.
  */
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+const API_PATH_PREFIX = '/api'
+
+/**
+ * Resolve the base URL every request is issued against.
+ *
+ * Two forms are accepted, and the difference matters:
+ *
+ *   * **Absolute** (`http://127.0.0.1:8010`) — the client dials the backend
+ *     directly, which relies on the API's CORS allow-list rather than on any
+ *     proxy. This is what the repository's `.env` ships, and what a deployment
+ *     serving the app and the API from different origins needs.
+ *   * **Relative** (`/api`, or nothing configured at all) — every request is
+ *     same-origin, handled by the Vite dev proxy in development and by one
+ *     reverse proxy in production. This is the fallback for the same reason it
+ *     always was: a bundle with a compiled-in `localhost` default is wrong
+ *     everywhere except the machine that built it.
+ *
+ * Both are normalized to end in exactly one `/api`, so an origin, an origin
+ * with the prefix already on it, and a stray trailing slash all behave the
+ * same. Getting that wrong is silent — every call answers 404 from a server
+ * that is running perfectly well — which is why it is done here once rather
+ * than trusted to each `.env` file.
+ */
+function resolveApiBaseUrl(configured: string | undefined): string {
+  const trimmed = (configured ?? '').trim().replace(/\/+$/, '')
+  if (!trimmed) return API_PATH_PREFIX
+  return trimmed.endsWith(API_PATH_PREFIX) ? trimmed : `${trimmed}${API_PATH_PREFIX}`
+}
+
+/**
+ * Where the API lives, read from `VITE_API_BASE_URL`.
+ *
+ * Vite inlines this at build time from the repository-root `.env`
+ * (`frontend/vite.config.ts` points `envDir` there), so the same file that
+ * tells the backend which port to bind tells the client which port to call.
+ * Only `VITE_`-prefixed keys are exposed to the bundle.
+ */
+export const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL)
 
 /** Pagination defaults, matching `backend/schemas.py`. */
 export const DEFAULT_PAGE = 1
