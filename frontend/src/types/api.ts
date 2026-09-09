@@ -7,8 +7,11 @@
  * below is optional because the backend can omit it, and a field that is
  * nullable is nullable because the column is.
  *
- * Every endpoint lives under `/api`, which Vite proxies to the FastAPI server
- * on `127.0.0.1:8010` in development (see `vite.config.ts`).
+ * Every endpoint lives under `/api`. Where that resolves to is configuration
+ * rather than a constant: `VITE_API_BASE_URL` in the repository-root `.env`
+ * names the backend origin, and a blank value falls back to a same-origin
+ * `/api` handled by the Vite dev proxy (see `services/api.ts` and
+ * `vite.config.ts`).
  *
  *     GET    /api/health              -> HealthResponse
  *     POST   /api/investigate         -> InvestigateResponse
