@@ -397,8 +397,17 @@ them. Populating the environment is an entry point's job.
 
 ### Starting the backend
 
+Locally:
+
 ```bash
 python3 backend.py
+```
+
+Or as a container, with PostgreSQL, the mock provider and the UI beside it —
+see [`DOCKER_README.md`](DOCKER_README.md):
+
+```bash
+docker compose up -d
 ```
 
 ```
