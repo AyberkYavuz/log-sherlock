@@ -1,0 +1,19 @@
+# ``node_modules`` is the important line: it is the largest thing in this
+# directory by an order of magnitude, it is platform-specific (a macOS tree
+# copied into a Linux image is worse than useless), and ``npm ci`` inside the
+# build reproduces it exactly from the lockfile.
+node_modules/
+dist/
+dist-ssr/
+
+.env
+.env.*
+*.local
+
+.git/
+.idea/
+.vscode/
+.DS_Store
+
+Dockerfile
+.dockerignore
