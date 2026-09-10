@@ -1062,7 +1062,8 @@ with `"env": ".env"`, and `init_db.py` calls `load_env_file()` explicitly.
 
 Created by `init_db.py`, never by the node. A node that issued DDL would need
 elevated privileges on every run, and a typo in a report would become a schema
-migration.
+migration. That script is idempotent and non-destructive — see
+[Database initialization](#database-initialization--init_dbpy).
 
 ```sql
 CREATE TABLE IF NOT EXISTS investigations (
@@ -1204,7 +1205,7 @@ one.
 
 ### Database initialization — `init_db.py`
 
-A root-level script, run once before a session of investigations, in either
+A root-level script, safe to run at any time and as often as you like, in either
 deployment:
 
 ```bash
@@ -1215,30 +1216,88 @@ Local development reads `.env`; a Docker Compose deployment sets the same `DB_*`
 variables in the service environment and needs no file. One code path serves
 both, because the only difference between them is what the values are.
 
-In one connection it loads `.env` if there is one, connects, **truncates** the
-`investigations` table if it exists, and **creates** it if it does not.
-Create-or-truncate rather than drop-and-recreate: truncating leaves the column
-types, the primary key and any index or grant a deployment has added exactly as
-they were, where a drop would discard all of them silently and replace the table
-with whatever the current release happens to declare.
+In one connection and one transaction it loads the resolved environment file if
+there is one, connects, creates the `investigations` table **if it is absent**,
+creates each declared index **if it is absent**, and reports how many stored
+rows it left untouched.
 
-**The script empties the table.** That is its purpose, but it means it is not
-something to point at a database whose contents matter. It reports the target
-and what it did on every run, so a mistake is visible in the output:
+**It destroys nothing.** Every statement is `CREATE ... IF NOT EXISTS`; there is
+no `DROP`, no `TRUNCATE` and no sequence reset anywhere in the path — and no
+sequence to reset in the first place, since the primary key is the caller's
+`investigation_id`. Existing rows are neither read for modification, rewritten
+nor removed, so a second run adds nothing and raises nothing. That is what makes
+the script safe to wire into a container entrypoint or a deployment step that
+cannot know whether the schema is already there.
+
+> This is a deliberate reversal of the script's earlier behaviour. It used to
+> **truncate** an existing table to hand back a clean slate, which made "check
+> the schema" and "delete every investigation" the same command — so running it
+> twice, or running it on startup, destroyed every stored report. Emptying the
+> table is now something an operator does explicitly in `psql`, with the
+> consequences in view, rather than a side effect of verifying a schema.
+
+The existence checks that decide which sentence gets logged are *reporting*
+only; the `IF NOT EXISTS` guards are what actually decide, so two processes
+initializing at once cannot race between a check and its statement. All the DDL
+shares one transaction, so a half-applied schema is not a state the script can
+leave behind, and the connection is closed on every path — including the ones
+that raise.
+
+Output on a database that already holds 27 investigations:
 
 ```
 Target: localhost:5432/postgres (user postgres)
+[LogSherlock DB] Verifying schema on localhost:5432/postgres — non-destructive: existing rows are never modified or removed
 [LogSherlock DB] Connecting to Postgres at localhost:5432/postgres as postgres...
-[LogSherlock DB] Table 'investigations' not found; creating it
+[LogSherlock DB] Checking for table 'investigations'...
+[LogSherlock DB] Table 'investigations' verified; left exactly as it was
+[LogSherlock DB] Checking for index 'investigations_created_at_id_idx'...
+[LogSherlock DB] Index 'investigations_created_at_id_idx' verified
+[LogSherlock DB] Schema initialization complete: table 'investigations' already present, 1 index(es) already present, 27 row(s) preserved
 
-OK: table 'investigations' created on localhost:5432/postgres
+OK: table 'investigations' verified on localhost:5432/postgres
+    Indexes verified: investigations_created_at_id_idx
+    Rows preserved:   27 (nothing was deleted)
 ```
+
+The `Rows preserved:` line is the one that makes the guarantee checkable rather
+than merely claimed, and it is counted inside the same transaction as the DDL.
+
+`initialize_database()` returns a `SchemaInitResult` — `table_created`,
+`indexes_created`, `indexes_present`, `preserved_rows` — so a caller can tell
+"created the schema" from "found it already correct" rather than reading a bare
+success flag. `init_db.init_db(config=None)` is the importable form for a test,
+an entrypoint or a startup hook; it deliberately does not load an environment
+file, because populating `os.environ` belongs to an entry point.
 
 Exit codes are distinct because the fixes are: `0` success, `1` a connection or
 statement failure (a deployment problem), `2` a missing driver (an install
 problem, reported with the `pip install psycopg2-binary` command). Failures print
 an actionable sentence rather than a traceback whose last frame is inside the
 driver.
+
+#### The declared indexes
+
+One, and the shortness is the point:
+
+```sql
+CREATE INDEX IF NOT EXISTS investigations_created_at_id_idx
+ON investigations (created_at DESC NULLS LAST, investigation_id ASC);
+```
+
+Its column list and its sort directions are copied from the API's
+`LIST_METADATA_SQL` exactly, `NULLS LAST` included, because an index only serves
+a paginated ordering when it matches that ordering — Postgres can read an index
+backwards but cannot re-sort it for free, and the record list issues this sort on
+every first paint. `CONCURRENTLY` is deliberately absent: it cannot run inside a
+transaction block, and sharing one transaction with the `CREATE TABLE` is worth
+more than avoiding a brief write lock on a table written once per investigation.
+
+Nothing else is indexed. The primary key already covers `investigation_id`,
+which is what the detail fetch and the delete look a row up by, and nothing in
+this repository filters on `application_name`, `analysis_mode` or `llm_provider`
+— the UI's search is client-side over rows it has already loaded. An index that
+serves no statement costs every write and speeds up nothing.
 
 ### A note on running the test suite
 
