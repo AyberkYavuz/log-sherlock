@@ -1,0 +1,45 @@
+# What never belongs in the Python build context.
+#
+# Two of these entries are load-bearing rather than tidy:
+#
+#   * the env files. They hold provider keys and a database password, and a
+#     ``COPY . .`` would bake them into an image layer where they survive every
+#     later ``rm`` and travel with every ``docker push``. The container gets its
+#     environment from Compose at *run* time instead — which is also what
+#     ``graph_library/env_files.py`` calls the normal orchestrated case.
+#   * ``frontend/``. The backend image has no use for 200 MB of ``node_modules``
+#     and a ``dist/`` bundle, and the frontend has its own context and its own
+#     ``.dockerignore``.
+
+.env
+.env.*
+!.env.example
+
+frontend/
+
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+.langgraph_api/
+
+.venv/
+venv/
+
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+*.log
+!sample_logs/*.log
+.DS_Store
