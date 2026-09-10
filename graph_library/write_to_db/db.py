@@ -10,8 +10,8 @@ anything would fail to start.
 
 Two callers, two entry points:
 
-    * :func:`initialize_database` — used by the root ``init_db.py`` to create or
-      empty the table before a run;
+    * :func:`initialize_database` — used by the root ``init_db.py`` to bring the
+      schema up to date without touching a single stored row;
     * :func:`upsert_investigation` — used by the node to store one report.
 
 Neither swallows an exception. Failure is the node's decision to absorb and the
@@ -24,14 +24,16 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, NamedTuple
 
 from .config import DatabaseConfig
 from .queries import (
+    COUNT_ROWS_SQL,
     CREATE_TABLE_SQL,
+    INDEX_DDL,
+    INDEX_EXISTS_SQL,
     TABLE_EXISTS_SQL,
     TABLE_NAME,
-    TRUNCATE_TABLE_SQL,
     UPSERT_SQL,
 )
 
@@ -148,34 +150,145 @@ def table_exists(cursor: Any, table_name: str = TABLE_NAME) -> bool:
     return bool(row and row[0])
 
 
-def initialize_database(config: DatabaseConfig) -> str:
-    """Bring the investigations table into a known-empty state.
+def index_exists(cursor: Any, index_name: str, table_name: str = TABLE_NAME) -> bool:
+    """Whether ``index_name`` is present on ``table_name`` in ``public``."""
+    cursor.execute(INDEX_EXISTS_SQL, (table_name, index_name))
+    row = cursor.fetchone()
+    return bool(row and row[0])
 
-    Create-or-truncate rather than drop-and-recreate: truncating leaves the
-    column types, the primary key and any index or grant a deployment has added
-    exactly as they were, where a drop would silently discard all of them and
-    replace the table with whatever this release happens to declare.
+
+def row_count(cursor: Any) -> int:
+    """How many investigations the table holds."""
+    cursor.execute(COUNT_ROWS_SQL)
+    row = cursor.fetchone()
+    return int(row[0]) if row else 0
+
+
+class SchemaInitResult(NamedTuple):
+    """What one initialization run found, and what it had to add.
+
+    A record of the *difference* the run made rather than a bare success flag,
+    because "created the table" and "found everything already in place" are the
+    two outcomes an operator wants distinguished — and because
+    :attr:`preserved_rows` is what makes the non-destructive guarantee
+    checkable instead of merely documented.
+
+    Attributes:
+        table_created: ``True`` when this run created the table, ``False`` when
+            it was already there.
+        indexes_created: Names of the indexes this run added.
+        indexes_present: Names of the indexes that already existed.
+        preserved_rows: Rows in the table after initialization. On a run that
+            created the table this is ``0``; on any other it is the count that
+            was there before, untouched.
+    """
+
+    table_created: bool
+    indexes_created: tuple[str, ...]
+    indexes_present: tuple[str, ...]
+    preserved_rows: int
+
+    @property
+    def changed(self) -> bool:
+        """Whether this run had to add anything at all."""
+        return self.table_created or bool(self.indexes_created)
+
+    @property
+    def summary(self) -> str:
+        """A one-line description of what happened, for a log or a CLI."""
+        table = "created" if self.table_created else "already present"
+        if self.indexes_created:
+            indexes = f"{len(self.indexes_created)} index(es) created"
+        else:
+            indexes = f"{len(self.indexes_present)} index(es) already present"
+        return (
+            f"table {TABLE_NAME!r} {table}, {indexes}, "
+            f"{self.preserved_rows} row(s) preserved"
+        )
+
+
+def initialize_database(config: DatabaseConfig) -> SchemaInitResult:
+    """Bring the investigations schema up to date, non-destructively.
+
+    Idempotent and safe to run on a database that holds live investigations.
+    Every statement it issues is guarded — ``CREATE TABLE IF NOT EXISTS`` and
+    ``CREATE INDEX IF NOT EXISTS`` — so calling this twice, or on every
+    container boot, adds nothing the second time and raises nothing. **No
+    existing row is read, rewritten or removed.** There is no ``TRUNCATE``, no
+    ``DROP`` and no sequence reset anywhere in this package; the primary key is
+    the caller's ``investigation_id``, so there is no sequence to reset in the
+    first place.
+
+    That is a deliberate reversal of what this function used to do. It
+    previously truncated an existing table to hand back a clean slate, which
+    made a schema check and a data wipe the same operation — so a deployment
+    that ran initialization on startup, or an operator who ran it twice to be
+    sure, destroyed every stored report. Preparing a clean slate is now a
+    separate act, and not one this code path performs.
+
+    The existence checks are for reporting only. The ``IF NOT EXISTS`` guards
+    are what actually decide, so two processes initializing at once cannot race
+    between a check and its statement.
+
+    All the work shares one connection and one transaction, so the schema is
+    either fully applied or not applied at all, and the connection is closed on
+    every path by :func:`connection`.
 
     Args:
         config: Where to connect and as whom.
 
     Returns:
-        ``"truncated"`` if the table was already there, ``"created"`` if it was
-        not — the caller reports which, since the two mean very different
-        things to whoever ran the script.
+        A :class:`SchemaInitResult` describing what was found and what was
+        added.
 
     Raises:
-        Exception: Any connection or statement failure, unhandled on purpose.
+        Exception: Any connection or statement failure, unhandled on purpose —
+            ``init_db.py`` turns it into an exit code and an actionable
+            sentence.
     """
-    with connection(config) as conn, conn.cursor() as cursor:
-        if table_exists(cursor):
-            announce(f"Table {TABLE_NAME!r} exists; truncating it")
-            cursor.execute(TRUNCATE_TABLE_SQL)
-            return "truncated"
+    announce(
+        f"Verifying schema on {config.target} — non-destructive: existing rows "
+        "are never modified or removed"
+    )
 
-        announce(f"Table {TABLE_NAME!r} not found; creating it")
+    with connection(config) as conn, conn.cursor() as cursor:
+        # -- the table ------------------------------------------------------
+        announce(f"Checking for table {TABLE_NAME!r}...")
+        table_was_present = table_exists(cursor)
         cursor.execute(CREATE_TABLE_SQL)
-        return "created"
+        if table_was_present:
+            announce(f"Table {TABLE_NAME!r} verified; left exactly as it was")
+        else:
+            announce(f"Table {TABLE_NAME!r} not found; created it")
+
+        # -- its indexes ----------------------------------------------------
+        created: list[str] = []
+        present: list[str] = []
+        for name, statement in INDEX_DDL:
+            announce(f"Checking for index {name!r}...")
+            was_present = index_exists(cursor, name)
+            cursor.execute(statement)
+            if was_present:
+                present.append(name)
+                announce(f"Index {name!r} verified")
+            else:
+                created.append(name)
+                announce(f"Index {name!r} not found; created it")
+
+        # -- what survived --------------------------------------------------
+        # Counted inside the same transaction as the DDL above, so the number
+        # reported is the number the schema work actually ran against.
+        preserved = row_count(cursor)
+
+        result = SchemaInitResult(
+            table_created=not table_was_present,
+            indexes_created=tuple(created),
+            indexes_present=tuple(present),
+            preserved_rows=preserved,
+        )
+
+    announce(f"Schema initialization complete: {result.summary}")
+    return result
 
 
 def upsert_investigation(
@@ -228,11 +341,14 @@ def upsert_investigation(
 
 __all__ = [
     "LOG_PREFIX",
+    "SchemaInitResult",
     "announce",
     "connect",
     "connection",
+    "index_exists",
     "initialize_database",
     "load_env_file",
+    "row_count",
     "table_exists",
     "upsert_investigation",
 ]
