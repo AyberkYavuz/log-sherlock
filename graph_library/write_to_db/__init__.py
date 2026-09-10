@@ -48,11 +48,14 @@ from .config import (
 )
 from .db import (
     LOG_PREFIX,
+    SchemaInitResult,
     announce,
     connect,
     connection,
+    index_exists,
     initialize_database,
     load_env_file,
+    row_count,
     table_exists,
     upsert_investigation,
 )
@@ -66,10 +69,14 @@ from .node import (
     write_to_db_node,
 )
 from .queries import (
+    COUNT_ROWS_SQL,
+    CREATE_LIST_ORDER_INDEX_SQL,
     CREATE_TABLE_SQL,
+    INDEX_DDL,
+    INDEX_EXISTS_SQL,
+    LIST_ORDER_INDEX_NAME,
     TABLE_EXISTS_SQL,
     TABLE_NAME,
-    TRUNCATE_TABLE_SQL,
     UPSERT_SQL,
 )
 
@@ -84,10 +91,13 @@ __all__ = [
     "DEFAULT_CONNECT_TIMEOUT",
     # db
     "initialize_database",
+    "SchemaInitResult",
     "upsert_investigation",
     "connect",
     "connection",
     "table_exists",
+    "index_exists",
+    "row_count",
     "load_env_file",
     "announce",
     "LOG_PREFIX",
@@ -95,7 +105,11 @@ __all__ = [
     "TABLE_NAME",
     "CREATE_TABLE_SQL",
     "TABLE_EXISTS_SQL",
-    "TRUNCATE_TABLE_SQL",
+    "INDEX_EXISTS_SQL",
+    "INDEX_DDL",
+    "LIST_ORDER_INDEX_NAME",
+    "CREATE_LIST_ORDER_INDEX_SQL",
+    "COUNT_ROWS_SQL",
     "UPSERT_SQL",
     # node
     "generate_investigation_id",
