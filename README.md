@@ -14,8 +14,8 @@ exist in the repository today.
 
 ## Current Status
 
-The graph pipeline has expanded well beyond parsing. Seven nodes are now active
-and fully operational:
+The graph pipeline has expanded well beyond parsing. All eight nodes are now
+active and fully operational:
 
 - **`parser`** — deterministic ingestion. Detects the log format, parses every
   line and normalizes it into a common schema, and reports structured parser
@@ -44,14 +44,27 @@ and fully operational:
   deterministically from parser health and the error analysis, asks one model for
   the root cause and the executive summary, and packages every upstream artifact
   into the `structured_report` a UI hydrates from and the database stores.
+- **`write_to_db`** — persistence. Writes that report to a PostgreSQL
+  `investigations` table in one idempotent upsert keyed on `investigation_id`,
+  and degrades with a note rather than failing a run that has already produced
+  its whole report.
 
 Full per-node documentation — state contracts, algorithms, guarantees, provider
 handling and the web-search benchmark — lives in
 [`docs/GRAPH_README.md`](docs/GRAPH_README.md).
 
-`write_to_db` is the one remaining node in the topology and is still a
-deterministic stub, so nothing is persisted yet; this documentation will grow
-together with the implementation.
+The graph is served by a FastAPI backend and a React client, both documented in
+[`docs/BACKEND_README.md`](docs/BACKEND_README.md) and
+[`docs/FRONTEND_README.md`](docs/FRONTEND_README.md). The whole stack —
+PostgreSQL, the API, the offline mock LLM provider and the UI — runs as four
+containers:
+
+```bash
+docker compose build && docker compose up -d   # then http://localhost:3000
+```
+
+See [`docs/DOCKER_README.md`](docs/DOCKER_README.md) for the images, the
+startup ordering and the data-persistence guarantees.
 
 ---
 
