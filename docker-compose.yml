@@ -1,0 +1,279 @@
+# =============================================================================
+# LogSherlock — the whole stack
+# =============================================================================
+#     docker compose build
+#     docker compose up -d
+#     open http://localhost:3000
+#
+# Four services: PostgreSQL, the FastAPI API, the offline mock LLM provider, and
+# nginx serving the React bundle with a reverse proxy in front of the API.
+#
+# ---------------------------------------------------------------------------
+# Where the configuration comes from
+# ---------------------------------------------------------------------------
+# Two kinds of value, kept apart on purpose:
+#
+#   * **Topology** — bind addresses, service hostnames, the local-LLM URL. These
+#     are written literally below. They describe this network, not a
+#     deployment's preference, and a developer's `.env` must not be able to
+#     reach in and change them. `DB_HOST=localhost` is correct on a laptop and
+#     fatal in a container, so it is not substitutable here.
+#
+#   * **Credentials and tuning** — provider keys, the database password, the
+#     graph timeout, tracing. These come through `${VAR:-default}`, which
+#     Compose resolves from its environment file. That file is `./.env` by
+#     default, so an existing local `.env` works with no extra flags:
+#
+#         docker compose up -d                          # reads ./.env
+#         docker compose --env-file .env.docker up -d    # reads ./.env.docker
+#
+#     Every one has a working default, so the stack also comes up on a fresh
+#     clone with no env file at all — the LLM nodes then degrade, exactly as
+#     they are designed to, and the `local` provider still works because the
+#     mock needs no key.
+#
+# `env_file:` is deliberately not used. It is not optional in Compose v2.23 (the
+# `required: false` field landed in 2.24), and `.env.docker` is gitignored — so
+# naming it there would make this file fail outright on a fresh clone.
+#
+# ---------------------------------------------------------------------------
+# Published ports
+# ---------------------------------------------------------------------------
+#     3000  -> frontend (nginx)            the UI, and `/api` proxied
+#     8010  -> backend                     the API directly, and `/docs`
+#     8000  -> mock-llm                    for poking at the mock by hand
+#    55432  -> postgres:5432               NOT 5432: a developer running
+#                                          PostgreSQL locally already owns that
+#                                          port, and a stack that cannot start
+#                                          beside the tools it was built with is
+#                                          a stack nobody runs
+# =============================================================================
+
+name: logsherlock
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — the only stateful service in the stack
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      # One substitution feeds both the server's password and the API's, so the
+      # two cannot be configured apart from each other.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_DB: ${DB_NAME:-postgres}
+      # Keeps initdb's collation deterministic across host locales.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      # The named volume is the persistence guarantee. Docker manages it
+      # independently of every container's lifecycle, so `docker compose down`,
+      # a rebuilt image and a bumped Postgres tag all leave the data in place.
+      #
+      # A bind mount to a host directory would work too and is deliberately not
+      # used: it inherits host filesystem semantics — ownership, case
+      # sensitivity, and on Docker Desktop a virtualised share whose fsync
+      # behaviour PostgreSQL has no business trusting.
+      #
+      # `docker compose down` does NOT remove this. `docker compose down -v`
+      # does, and that is the only command in this file that destroys data.
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "55432:5432"
+    healthcheck:
+      # The gate everything else waits behind. `pg_isready` is the right probe
+      # rather than a TCP check because the container accepts connections during
+      # initdb *before* the database is usable — and it is run as the configured
+      # user against the configured database, so a broken credential or a
+      # missing database fails the check instead of passing it.
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-postgres} -q",
+        ]
+      interval: 5s
+      timeout: 5s
+      # First boot has to run initdb, which takes several seconds on a cold
+      # volume. `start_period` keeps those early failures from counting toward
+      # `retries` — without it a slow first initdb marks the service unhealthy
+      # and the API never starts.
+      start_period: 30s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # The offline LLM provider
+  # ---------------------------------------------------------------------------
+  mock-llm:
+    build:
+      context: .
+      target: mock-llm
+    image: logsherlock-mock-llm:local
+    environment:
+      # `0.0.0.0`, not loopback: a sibling container dialling `mock-llm:8000`
+      # reaches this container's external interface, and a loopback-bound server
+      # answers nothing there. The code defaults to loopback on purpose, so this
+      # is the deliberate opt-in the docstring asks for.
+      MOCK_LLM_HOST: 0.0.0.0
+      MOCK_LLM_PORT: 8000
+      # Echoed in this service's own startup line so a port mismatch between the
+      # server and the graph is visible in the mock's log, beside the port it is
+      # actually serving.
+      LOCAL_LLM_BASE_URL: http://mock-llm:8000/v1
+    ports:
+      - "8000:8000"
+    networks:
+      default:
+        aliases:
+          # Both spellings resolve. The code and `.env.example` already use the
+          # hyphenated name, and `mock_llm` is the underscored spelling a reader
+          # coming from the service list might reach for first. An alias costs
+          # nothing and removes a whole class of "connection refused".
+          - mock_llm
+          - mock-llm
+    healthcheck:
+      # `/v1/models` is the mock's own listing endpoint, so this proves the
+      # OpenAI-compatible surface is answering rather than merely that a socket
+      # is open. Python rather than curl because the image is `python:slim` and
+      # has no curl — and adding one for a healthcheck would be a package
+      # installed for the sake of a probe.
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/v1/models',timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # The API
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      target: backend
+    image: logsherlock-backend:local
+    depends_on:
+      postgres:
+        # The condition this whole file is arranged around. The application's
+        # lifespan hook verifies the investigations schema before it serves a
+        # request, and a failure there aborts startup with exit code 3 — so
+        # starting before PostgreSQL accepts connections would not be a slow
+        # first request, it would be a crash loop. `service_started` is not
+        # enough: the container is up long before initdb has finished.
+        condition: service_healthy
+      mock-llm:
+        # Not `service_healthy`. The mock is one of five providers and the graph
+        # degrades when a provider is unreachable, so blocking the API's boot on
+        # it would give a test double veto over the whole stack.
+        condition: service_started
+    environment:
+      # -- topology, not preference ---------------------------------------
+      API_HOST: 0.0.0.0
+      API_PORT: 8010
+      DB_HOST: postgres
+      DB_PORT: 5432
+      LOCAL_LLM_BASE_URL: http://mock-llm:8000/v1
+      # Same-origin through the nginx proxy needs no CORS entry at all; these
+      # are for a browser that talks to port 8010 directly, and for the Vite dev
+      # server running on the host against this containerized API.
+      API_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8010
+      # -- credentials and tuning, substituted -----------------------------
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      # 10s when nothing is configured, rather than the code's local default of
+      # 5: a container's first connection can race the last of PostgreSQL's own
+      # startup work even after `pg_isready` has passed. A local `.env` that
+      # sets this wins, which is fine — the healthcheck gate is what actually
+      # makes the ordering safe, and this is only the margin on top of it.
+      DB_CONNECT_TIMEOUT: ${DB_CONNECT_TIMEOUT:-10}
+      API_GRAPH_TIMEOUT: ${API_GRAPH_TIMEOUT:-900}
+      API_KEEP_ALIVE_TIMEOUT: ${API_KEEP_ALIVE_TIMEOUT:-300}
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
+      # Never on in a container. The reloader supervises a child process, so a
+      # failed startup is retried on file change instead of exiting non-zero —
+      # which is precisely the signal an orchestrator restart policy needs.
+      API_RELOAD: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      LOCAL_LLM_MODEL_NAME: ${LOCAL_LLM_MODEL_NAME:-mock-local-llm}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-cant-be-empty}
+      # Off unless the environment file turns it on — so a fresh clone traces
+      # nothing, and a developer who has tracing configured keeps it. Worth
+      # knowing when it *is* on: `raw_logs` and `parsed_logs` both live in graph
+      # state, so a full-corpus run pushes a single trace upload past
+      # LangSmith's limit and fails on a background thread. That costs
+      # observability rather than results, which is why it is easy to miss.
+      # Set `LANGSMITH_TRACING=false` for benchmark-sized payloads.
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-}
+    ports:
+      - "8010:8010"
+    healthcheck:
+      # `/api/health` deliberately touches neither the database nor the graph,
+      # which is what makes it the right liveness probe: it answers while
+      # PostgreSQL is down, so this check reports on *this* container rather
+      # than on its dependencies. Schema readiness is the lifespan hook's job,
+      # and it has already run by the time this can pass.
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010/api/health',timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # The UI
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Empty on purpose — the client then uses the relative `/api`, which
+        # nginx proxies to `backend:8010`. See `frontend/Dockerfile`.
+        VITE_API_BASE_URL: ""
+    image: logsherlock-frontend:local
+    depends_on:
+      backend:
+        # nginx resolves `backend` lazily per request and would start happily
+        # without it, but waiting means "the stack is up" is true when Compose
+        # says so, rather than true a few seconds later.
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    healthcheck:
+      # busybox `wget` — already in the alpine image, no package added.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    # Named rather than anonymous, so it survives `docker compose down`, is
+    # findable by `docker volume ls`, and is reattached by name on the next
+    # `up`. An anonymous volume would be recreated empty every time.
+    name: logsherlock_postgres_data
+
+networks:
+  default:
+    name: logsherlock_network
