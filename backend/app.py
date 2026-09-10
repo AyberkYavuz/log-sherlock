@@ -10,10 +10,17 @@ both matter here:
     * nothing is constructed at import time, so ``import backend`` does not read
       the environment, resolve a database or compile the graph.
 
-The lifespan hook logs what the process is actually wired to — the bind address,
-the allowed origins and, in production wiring, the database that is about to be
-read. That last line is the single most useful thing in the log when a
-deployment turns out to be serving an empty list from the wrong server.
+The lifespan hook does two things. It logs what the process is actually wired
+to — the bind address, the allowed origins and, in production wiring, the
+database that is about to be read; that last line is the single most useful
+thing in the log when a deployment turns out to be serving an empty list from
+the wrong server. And it verifies the investigations schema before the first
+request is served, so a fresh database does not have to be prepared by hand.
+
+**Schema verification runs only under production wiring**, and that is a
+correctness requirement rather than an optimization: an application built over
+test doubles has no database to verify, and a startup hook that reached for one
+anyway would make every offline test depend on a running PostgreSQL.
 """
 
 from __future__ import annotations
@@ -22,10 +29,12 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from anyio import to_thread
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from graph_library.env_files import loaded_env_file
+from graph_library.write_to_db import DatabaseConfig, initialize_database
 
 from .config import ApiSettings
 from .dependencies import SERVICE_FACTORY_ATTRIBUTE
@@ -34,6 +43,14 @@ from .factories import DefaultServiceFactory, PostgresRepositoryFactory, Service
 from .routes import health_router, investigations_router
 
 logger = logging.getLogger(__name__)
+
+#: Prefix on every line the startup and shutdown hook emits, so one ``grep``
+#: separates "what happened while the process was booting" from everything the
+#: request path logs afterwards. Distinct from ``write_to_db``'s
+#: ``[LogSherlock DB]``, which the schema work itself uses — the two appear
+#: interleaved during startup, and telling "the hook decided to verify" from
+#: "the database answered" is the whole reason they differ.
+LIFESPAN_LOG_PREFIX = "[FastAPI Lifespan]"
 
 #: Mounted under ``/api`` so the whole surface is reachable behind one proxy
 #: rule and cannot collide with a static route a frontend server owns.
@@ -46,6 +63,74 @@ DESCRIPTION = (
     "the reports it stored."
 )
 VERSION = "0.1.0"
+
+
+def _database_config(factory: ServiceFactory) -> DatabaseConfig | None:
+    """The database this application reads from, or ``None`` if it has none.
+
+    ``None`` is the test wiring: a :class:`~backend.factories.StubServiceFactory`
+    (or any other substitute) has no PostgreSQL behind it, so there is nothing
+    to name in a log line and nothing to verify at startup.
+
+    The config is taken from the repository factory rather than re-read from the
+    environment, which is what keeps the schema that gets verified and the
+    database that gets queried from being two different servers.
+    """
+    if isinstance(factory, DefaultServiceFactory) and isinstance(
+        factory.repository_factory, PostgresRepositoryFactory
+    ):
+        return factory.repository_factory.config
+    return None
+
+
+async def _verify_schema(config: DatabaseConfig) -> None:
+    """Create the investigations table and its indexes if they are absent.
+
+    Idempotent and non-destructive — see
+    :func:`graph_library.write_to_db.initialize_database`. Every statement is
+    ``CREATE ... IF NOT EXISTS``, so a database already holding investigations
+    keeps every one of them; that property is what makes this safe to run on
+    every boot rather than once by hand.
+
+    Run in a worker thread. ``initialize_database`` is synchronous ``psycopg2``
+    I/O that blocks for up to ``DB_CONNECT_TIMEOUT`` seconds against an
+    unreachable server, and blocking the event loop through startup would also
+    block the signal handling that is supposed to let an operator interrupt it.
+
+    Args:
+        config: Where to connect and as whom.
+
+    Raises:
+        Exception: Whatever the driver raised, re-raised after logging so
+            startup fails loudly. See the comment at the call site for why
+            failing is the right answer here.
+    """
+    logger.info(
+        "%s Starting automated database schema verification on %s...",
+        LIFESPAN_LOG_PREFIX,
+        config.target,
+    )
+    try:
+        result = await to_thread.run_sync(initialize_database, config)
+    except Exception:
+        # ``exception`` rather than ``error``: it attaches the full traceback,
+        # which is the only thing that distinguishes a refused connection from
+        # a rejected credential from a missing database in a container log
+        # nobody can attach a debugger to.
+        logger.exception(
+            "%s Database schema verification FAILED on %s. The API will not "
+            "start. Check that PostgreSQL is running and that DB_HOST, DB_PORT, "
+            "DB_NAME, DB_USER and DB_PASSWORD are correct.",
+            LIFESPAN_LOG_PREFIX,
+            config.target,
+        )
+        raise
+    logger.info(
+        "%s Database schema verification complete on %s: %s",
+        LIFESPAN_LOG_PREFIX,
+        config.target,
+        result.summary,
+    )
 
 
 def _build_lifespan(settings: ApiSettings, factory: ServiceFactory):
@@ -91,20 +176,37 @@ def _build_lifespan(settings: ApiSettings, factory: ServiceFactory):
                 environment.selected_by,
                 environment.loaded,
             )
-        if isinstance(factory, DefaultServiceFactory) and isinstance(
-            factory.repository_factory, PostgresRepositoryFactory
-        ):
-            # Production wiring only — a test factory has no database to name.
-            # The target carries no credential (see ``DatabaseConfig.target``),
-            # so it is safe to log.
+        # Production wiring only — a test factory has no database. The target
+        # carries no credential (see ``DatabaseConfig.target``), so it is safe
+        # to log.
+        database = _database_config(factory)
+        if database is None:
             logger.info(
-                "Investigations database: %s",
-                factory.repository_factory.config.target,
+                "%s No PostgreSQL wiring in this application; schema "
+                "verification skipped",
+                LIFESPAN_LOG_PREFIX,
             )
+        else:
+            logger.info("Investigations database: %s", database.target)
+            # Deliberately *not* wrapped in a ``try`` that swallows. The three
+            # storage endpoints cannot work without this table, and a process
+            # that boots anyway would answer every one of them with a 503 while
+            # reporting itself healthy to a load balancer — a failure that
+            # looks like a database outage from the outside and takes an
+            # operator to the wrong system. Failing at boot puts the reason in
+            # the startup log, where the person deploying is already looking,
+            # and gives uvicorn a non-zero exit code for an orchestrator to
+            # act on.
+            #
+            # The cost is real and worth naming: an API that would previously
+            # have started and served ``/api/health`` and ``POST
+            # /api/investigate`` against an unreachable database now refuses to
+            # start at all.
+            await _verify_schema(database)
 
         yield
 
-        logger.info("%s shutting down", TITLE)
+        logger.info("%s %s shutting down", LIFESPAN_LOG_PREFIX, TITLE)
 
     return lifespan
 
@@ -125,6 +227,13 @@ def create_app(
     Returns:
         The application, ready for uvicorn or
         :class:`~fastapi.testclient.TestClient`.
+
+    Nothing here touches the database. Under production wiring the
+    investigations schema is verified by the lifespan hook when the application
+    *starts*, not when it is built, so constructing one still reads no
+    environment, opens no socket and compiles no graph. A
+    :class:`~fastapi.testclient.TestClient` used as a context manager runs that
+    hook; one used bare does not.
     """
     settings = settings or ApiSettings.from_env()
     service_factory = service_factory or DefaultServiceFactory(settings=settings)
@@ -169,4 +278,11 @@ def create_app(
     return app
 
 
-__all__ = ["API_PREFIX", "DESCRIPTION", "TITLE", "VERSION", "create_app"]
+__all__ = [
+    "API_PREFIX",
+    "DESCRIPTION",
+    "LIFESPAN_LOG_PREFIX",
+    "TITLE",
+    "VERSION",
+    "create_app",
+]

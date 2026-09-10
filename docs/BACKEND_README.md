@@ -80,7 +80,7 @@ record, and why `InvestigationRepository` has no `create` method.
 | **Uvicorn** | ASGI server, configured for long-running graph invocations |
 | **LangGraph** | The analysis engine, imported from `graph.py` and compiled once |
 | **psycopg2** | PostgreSQL driver, imported lazily and only where storage is touched |
-| **Pytest** | 68 offline tests over the whole HTTP surface |
+| **Pytest** | 82 offline tests over the HTTP surface and the startup hook |
 
 FastAPI, Uvicorn and psycopg2 are already core dependencies of the project;
 `httpx`, which `fastapi.testclient.TestClient` requires, is in the `dev` extra.
@@ -303,7 +303,9 @@ HTTP path 422s.
    LLM providers you intend to call — `.[openai]`, `.[anthropic]`, `.[gemini]`,
    `.[search]` — exactly as the graph documentation describes.
 
-2. **A running PostgreSQL** reachable with the `DB_*` credentials below.
+2. **A running PostgreSQL** reachable with the `DB_*` credentials below. This is
+   now a hard startup requirement, not merely a runtime one — see
+   [Automated schema verification](#automated-schema-verification-on-startup).
 
 3. **A `.env` file** at the repository root. Copy `.env.example` and fill in
    what you need:
@@ -312,19 +314,21 @@ HTTP path 422s.
    cp .env.example .env
    ```
 
-4. **The `investigations` table**, created before the first run:
+4. **The `investigations` table** — created for you. The application's lifespan
+   hook verifies the schema on every boot, so there is nothing to run by hand.
+
+   The script still exists and is worth knowing about, because it is the same
+   code path and it is how you prepare a database *without* starting a server —
+   a migration step, a CI job, a `psql` host:
 
    ```bash
    python3 init_db.py
    ```
 
-   > **The script is idempotent and destroys nothing.** Every statement it
-   > issues is `CREATE ... IF NOT EXISTS`, so running it against a database that
-   > already holds investigations verifies the schema and leaves every stored
-   > row exactly as it was — it reports the count it preserved. Run it as often
-   > as you like, including on every deployment. Skipping it is the mistake that
-   > costs you something: the three storage endpoints report a `503` against a
-   > table that does not exist yet.
+   > **Both are idempotent and destroy nothing.** Every statement is
+   > `CREATE ... IF NOT EXISTS`, so running against a database that already
+   > holds investigations verifies the schema and leaves every stored row
+   > exactly as it was — the log reports the count it preserved.
 
 ### Port allocations
 
@@ -406,13 +410,67 @@ LogSherlock API starting on http://127.0.0.1:8010
 INFO  backend.factories: Repositories will read from localhost:5432/postgres
 INFO  backend.app: LogSherlock API 0.1.0 starting on 127.0.0.1:8010 (graph timeout: 900s)
 INFO  backend.app: Investigations database: localhost:5432/postgres
+INFO  backend.app: [FastAPI Lifespan] Starting automated database schema verification on localhost:5432/postgres...
+INFO  graph_library.write_to_db.db: [LogSherlock DB] Checking for table 'investigations'...
+INFO  graph_library.write_to_db.db: [LogSherlock DB] Table 'investigations' verified; left exactly as it was
+INFO  graph_library.write_to_db.db: [LogSherlock DB] Checking for index 'investigations_created_at_id_idx'...
+INFO  graph_library.write_to_db.db: [LogSherlock DB] Index 'investigations_created_at_id_idx' verified
+INFO  backend.app: [FastAPI Lifespan] Database schema verification complete on localhost:5432/postgres: table 'investigations' already present, 1 index(es) already present, 27 row(s) preserved
 INFO  Uvicorn running on http://127.0.0.1:8010 (Press CTRL+C to quit)
 ```
 
 The `Investigations database:` line is the single most useful thing in that log
 when a deployment turns out to be serving an empty list from the wrong server.
 It carries no credential — the label is built from a `host:port/dbname` property
-that has no representation for the password.
+that has no representation for the password, and the startup path is tested for
+that specifically.
+
+The two prefixes are deliberately different. `[FastAPI Lifespan]` is the hook
+deciding to verify; `[LogSherlock DB]` is the database answering. They interleave
+during startup, and one `grep` separates the decision from the outcome.
+
+### Automated schema verification on startup
+
+The lifespan hook calls
+`graph_library.write_to_db.initialize_database()` before the first request is
+served, against the same `DatabaseConfig` the repositories were built with — not
+a second read of the environment, which could name a different server. It is
+idempotent and non-destructive, so it runs on every boot rather than once: every
+statement is `CREATE ... IF NOT EXISTS`, and the completion line reports how many
+rows it preserved.
+
+Three details are load-bearing:
+
+- **It runs only under production wiring.** The hook checks for a
+  `DefaultServiceFactory` over a `PostgresRepositoryFactory`; an application
+  built over test doubles logs `schema verification skipped` and touches nothing.
+  That guard is what keeps the 68-test offline suite offline.
+- **It runs in a worker thread** (`anyio.to_thread.run_sync`), because
+  `initialize_database` is blocking `psycopg2` I/O that waits up to
+  `DB_CONNECT_TIMEOUT` seconds. Blocking the event loop through startup would
+  also block the signal handling meant to let an operator interrupt it.
+- **A failure aborts the boot**, with `logger.exception` putting the full
+  traceback in the log first. uvicorn then reports `Application startup failed.
+  Exiting.` and the process exits **3**, which is a non-zero code an
+  orchestrator can act on.
+
+**The trade-off, stated plainly.** The API used to start against an unreachable
+database and serve `/api/health` and `POST /api/investigate` — analysis works
+without storage, and the graph degrades to `db_persisted: false`. It now refuses
+to start at all. That is the right default for a deployment: three of the five
+endpoints cannot work without the table, and a process that boots anyway answers
+them with `503` while reporting itself healthy to a load balancer, which reads as
+a database outage and sends an operator to the wrong system. It does mean an
+offline demo of the analysis path is no longer possible through this server.
+
+Note that `API_RELOAD=true` behaves differently, and it is worth knowing: the
+reloader supervises a child process, so a failed startup is retried on the next
+file change rather than exiting 3.
+
+Nothing about *runtime* availability changed. A database that goes away after a
+successful boot still produces `503`s from the storage endpoints and a `200` from
+health, exactly as documented above — health deliberately does not depend on
+storage.
 
 Interactive OpenAPI documentation is served at `/docs` (Swagger UI) and
 `/redoc`.
@@ -998,8 +1056,17 @@ storage.
 
 ### Structure
 
-The suite lives in `tests/test_backend_api.py`: **68 tests, all passing, all
-offline.** No PostgreSQL, no LLM provider, no compiled graph.
+The suite lives in two files — `tests/test_backend_api.py` (68 tests, the HTTP
+surface) and `tests/test_lifespan.py` (14 tests, startup and shutdown):
+**82 tests, all passing, all offline.** No PostgreSQL, no LLM provider, no
+compiled graph.
+
+The split is not cosmetic. `TestClient` runs the lifespan **only** when it is
+used as a context manager, and `test_backend_api.py` uses a bare client
+throughout — so the endpoint tests never enter the startup path, which is
+precisely what keeps them from needing a database. `test_lifespan.py` is the
+file that uses `with TestClient(app):`, and it substitutes
+`backend.app.initialize_database` rather than reaching for a server.
 
 The application under test is built through the real `create_app()` with a
 substitute `ServiceFactory`. Everything below that one seam is the production
@@ -1035,6 +1102,7 @@ rather than against a recorded call.
 | Error envelope | Every status uses `{"detail": ...}`; an unexpected exception is a 500 that leaks no traceback |
 | CORS | Both React origins on preflight and on a real request; an unknown origin gets no allow header |
 | Service layer | Both overloads dispatch on call shape; a call matching neither raises `TypeError`; keyword fields validate through the same model; a supplied id is never replaced; the generated-id format |
+| Lifespan | Schema verification runs once per boot, against the repositories' own config, before the first request; off the event loop; not at construction time; skipped entirely under test wiring; the start, completion and shutdown lines; no password in the log; a failure aborts startup with `exc_info` and a traceback naming the `DB_*` variables |
 | Architecture | All six ABCs refuse instantiation; the OpenAPI schema documents exactly the five endpoints |
 
 The graph-invocation tests assert on the **input state the runner built**, not
@@ -1045,7 +1113,7 @@ merely on the response, so a regression that stopped forwarding
 ### Running the tests
 
 ```bash
-pytest tests/test_backend_api.py -v
+pytest tests/test_backend_api.py tests/test_lifespan.py -v
 ```
 
 The backend suite needs no database and no environment, and takes well under a
@@ -1097,7 +1165,8 @@ for the measured thresholds.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `FAILED to bind 127.0.0.1:8010` | Port in use | Set `API_PORT` |
-| `503` from all three storage endpoints, `200` from health | Database unreachable, or the table does not exist | Check `DB_*`; run `python3 init_db.py` |
+| `[FastAPI Lifespan] ... FAILED`, `Application startup failed. Exiting.`, exit code `3` | The database was unreachable at boot, so schema verification could not run | Check `DB_*` and that PostgreSQL is up. The traceback above the line names the driver error |
+| `503` from all three storage endpoints, `200` from health | The database went away *after* a successful boot | Check `DB_*`; the analysis path is unaffected |
 | `db_persisted: false` with a note naming the database | The graph ran but could not store | Same as above — the analysis itself is unaffected |
 | Notes contain `LLM reasoning unavailable` | No provider key, or an unreachable endpoint | Set the provider's key, or use `llm_provider: "local"` with the mock server |
 | Browser reports a CORS error | The UI's origin is not in the allow list | Add it to `API_CORS_ORIGINS` |
