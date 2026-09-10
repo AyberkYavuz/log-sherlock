@@ -312,17 +312,19 @@ HTTP path 422s.
    cp .env.example .env
    ```
 
-4. **The `investigations` table**, created once before the first run:
+4. **The `investigations` table**, created before the first run:
 
    ```bash
    python3 init_db.py
    ```
 
-   > **This script truncates the table if it already exists.** That is its
-   > purpose — it prepares a clean slate — but do not point it at a database
-   > whose contents matter. Skipping it entirely is the more common mistake: the
-   > three storage endpoints will report a `503` against a table that does not
-   > exist yet.
+   > **The script is idempotent and destroys nothing.** Every statement it
+   > issues is `CREATE ... IF NOT EXISTS`, so running it against a database that
+   > already holds investigations verifies the schema and leaves every stored
+   > row exactly as it was — it reports the count it preserved. Run it as often
+   > as you like, including on every deployment. Skipping it is the mistake that
+   > costs you something: the three storage endpoints report a `503` against a
+   > table that does not exist yet.
 
 ### Port allocations
 
