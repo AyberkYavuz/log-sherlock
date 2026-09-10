@@ -46,7 +46,16 @@ dependencies = [
 # not in the core list.
 openai = ["langchain-openai>=1.3"]
 anthropic = ["langchain-anthropic>=1.5"]
-gemini = ["google-genai>=2.18"]
+# Two packages, because the Gemini path uses two SDKs for two jobs:
+# ``google-genai`` for ``discover_models()``'s ``models.list()`` call, and
+# ``langchain-google-genai`` for ``ChatGoogleGenerativeAI`` — the client every
+# LLM node actually invokes. Only the first was declared here, so
+# ``pip install -e ".[gemini]"`` produced an environment that could enumerate
+# Gemini models and not call one: every Gemini run degraded with "The 'gemini'
+# provider requires the langchain-google-genai package". It went unnoticed
+# locally because the package was installed by hand; a container built from
+# this manifest alone is what surfaced it.
+gemini = ["google-genai>=2.18", "langchain-google-genai>=4.3"]
 # Optional web-search detour for the error-analysis node, off by default.
 search = ["tavily-python>=0.5"]
 # Everything needed to run the suite and the deterministic aggregations.
