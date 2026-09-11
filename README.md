@@ -195,3 +195,66 @@ You can find each component detail:
 
 [`docs/DOCKER_README.md`](docs/DOCKER_README.md) 
 
+---
+
+## LogSherlock Local Setup
+
+### Prerequisites
+
+You need to have the followings on your local machine:
+
+* Node 22+
+* Python 3.12+
+* uv package manager
+* Postgres
+
+### Local  Setup
+
+After cloning the repository, please run the following command:
+
+```bash
+cp .env.example .env
+```
+
+You need to fill your API keys in .env file.
+
+When you have filled .env file, please run the following command in order to create investigations table on your local Postgres:
+
+Terminal 1:
+```bash
+uv run init_db.py
+```
+
+After running init_db.py, you will have investigations table. LogSherlock cannot be run without that table.
+
+Run the following command to up mock local llm service. This service simulates OpenAI compatible local llm service.
+
+Terminal 2:
+```bash
+uv run tests/mock_local_llm.py
+```
+
+Now we are ready to run backend application of LogSherlock.
+
+Please run the following command to start backend application:
+
+Terminal 3:
+```bash
+uv run backend.py
+```
+
+Please run the following command to start frontend application:
+
+Terminal 4:
+```bash
+cd frontend && npm run dev
+```
+
+Please copy the following files from sample_logs/ folder and paste them to your Desktop:
+
+* fastapi_recovery.log
+* typescript_pino_recovery.log
+* java_spring_boot_large.text.log
+* java_spring_boot_large.json.log
+
+You can use these files to test LogSherlock on your local machine.
