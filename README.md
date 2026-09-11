@@ -6,90 +6,6 @@ normalized, machine-readable form, and then reasons about it: what the dataset
 contains, how the incident unfolded over time, which errors occurred, and which
 of them actually started it.
 
-The project is under active development. Its architecture is designed to grow
-one analysis stage at a time, and this document describes only the parts that
-exist in the repository today.
-
----
-
-## Current Status
-
-The graph pipeline has expanded well beyond parsing. All eight nodes are now
-active and fully operational:
-
-- **`parser`** — deterministic ingestion. Detects the log format, parses every
-  line and normalizes it into a common schema, and reports structured parser
-  health metrics.
-- **`statistics`** — deterministic dataset composition. Level and logger
-  distributions, severity counts and ratios, timestamp coverage, and
-  distributions over dynamically discovered metadata keys.
-- **`timeline`** — deterministic temporal analysis. Adaptively sized time
-  buckets plus the milestones that make the shape readable: log coverage
-  boundaries, first and last error, and the error onset → peak → recovery
-  narrative.
-- **`pattern_analysis`** — behavioral reasoning over the two deterministic
-  reports above, which is why it runs downstream of them rather than beside
-  them. Reports volume spikes, cross-logger cascades, metadata concentrations
-  and baseline shifts. When no model is reachable it derives the same summary
-  arithmetically rather than returning nothing.
-- **`error_analysis`** — deterministic error fingerprinting followed by a single
-  batched LLM pass. Collates multi-line tracebacks, masks variable tokens,
-  collapses identical failures into counted signatures, and asks a model which
-  signature is the root cause and how it cascaded. Five providers are supported
-  across three reasoning tiers.
-- **`web_search`** — the optional, opt-in detour between the two error-analysis
-  passes. Retrieves external documentation from Tavily for error signatures a
-  model cannot be expected to recognise, behind a relevance floor.
-- **`prepare_output`** — the fan-in synthesis gate. Scores the evidence
-  deterministically from parser health and the error analysis, asks one model for
-  the root cause and the executive summary, and packages every upstream artifact
-  into the `structured_report` a UI hydrates from and the database stores.
-- **`write_to_db`** — persistence. Writes that report to a PostgreSQL
-  `investigations` table in one idempotent upsert keyed on `investigation_id`,
-  and degrades with a note rather than failing a run that has already produced
-  its whole report.
-
-Full per-node documentation — state contracts, algorithms, guarantees, provider
-handling and the web-search benchmark — lives in
-[`docs/GRAPH_README.md`](docs/GRAPH_README.md).
-
-The graph is served by a FastAPI backend and a React client, both documented in
-[`docs/BACKEND_README.md`](docs/BACKEND_README.md) and
-[`docs/FRONTEND_README.md`](docs/FRONTEND_README.md). The whole stack —
-PostgreSQL, the API, the offline mock LLM provider and the UI — runs as four
-containers:
-
-```bash
-docker compose build && docker compose up -d   # then http://localhost:3000
-```
-
-See [`docs/DOCKER_README.md`](docs/DOCKER_README.md) for the images, the
-startup ordering and the data-persistence guarantees.
-
----
-
-## Parser Node
-
-The Parser node is the entry point for all log analysis. It takes raw log text
-and produces a consistent, structured representation that the rest of the system
-can rely on. Its responsibilities are:
-
-- **Detect the log format** of the incoming data automatically.
-- **Parse supported log formats** from many different ecosystems.
-- **Normalize every line into a common schema**, so downstream consumers never
-  need to know which system produced the logs.
-- **Extract the timestamp** and normalize it into a consistent representation.
-- **Extract the log level** (severity) where present.
-- **Extract the logger or component name** where present.
-- **Extract structured metadata** that a line carries beyond the common fields.
-- **Produce parser metrics** describing the health of each parsing run.
-- **Never fail because of unknown or unexpected lines.** A line that cannot be
-  fully understood is still preserved rather than dropped or raised as an error.
-- **Gracefully handle mixed-quality logs**, extracting as much structure as a
-  line offers and falling back cleanly when a line is unstructured.
-
-The parser is deterministic: the same input always produces the same output.
-
 ---
 
 ## Supported Log Formats
@@ -144,22 +60,6 @@ invents information that the source did not contain.
 
 ---
 
-## Parser Metrics
-
-Every parsing run produces a set of metrics that summarize how the run went.
-These metrics make the health of the ingestion stage observable and let later
-stages reason about data quality. They include:
-
-- **detected format** — The log format the parser identified for the input.
-- **parser used** — Which parser handled the input.
-- **confidence** — How strongly the input matched the selected format.
-- **total lines** — The total number of lines in the input.
-- **parsed lines** — The number of lines successfully turned into entries.
-- **malformed lines** — Non-empty lines the parser could not parse.
-- **blank lines** — Empty or whitespace-only lines that were skipped.
-- **missing timestamps** — Parsed entries that did not carry a timestamp.
-
----
 
 ## Sample Logs & Benchmarks
 
@@ -232,7 +132,7 @@ These files also back the web-search benchmark documented in
 
 ---
 
-## Testing
+## LangGraph Testing
 
 Node correctness is validated through several complementary approaches:
 
@@ -254,7 +154,7 @@ Together these keep the graph stable as new nodes and ecosystems are added.
 
 ---
 
-## Design Principles
+## LangGraph Design Principles
 
 The graph is built around a small set of guiding principles:
 
@@ -278,3 +178,20 @@ The graph is built around a small set of guiding principles:
   node repairs, infers or back-fills a missing timestamp, level or logger.
 - **Backward compatibility** — Existing formats keep working unchanged as new
   ones are introduced.
+
+---
+
+## System Components Documentation
+
+We have langgraph, backend, frontend and deployment components. 
+
+You can find each component detail:
+
+[`docs/GRAPH_README.md`](docs/GRAPH_README.md)
+
+[`docs/BACKEND_README.md`](docs/BACKEND_README.md) 
+
+[`docs/FRONTEND_README.md`](docs/FRONTEND_README.md)
+
+[`docs/DOCKER_README.md`](docs/DOCKER_README.md) 
+
