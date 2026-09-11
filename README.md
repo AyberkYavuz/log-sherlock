@@ -258,3 +258,63 @@ Please copy the following files from sample_logs/ folder and paste them to your 
 * java_spring_boot_large.json.log
 
 You can use these files to test LogSherlock on your local machine.
+
+### LogSherlock Local Deployment
+
+### Prerequisite
+
+You need to have the following on your local machine:
+
+* Docker Desktop
+
+### Local Deployment
+
+After cloning the repository, please run the following command in log-sherlock (root) directory:
+
+```bash
+cp .env.example .env.docker
+```
+
+You need to fill your API keys in .env.docker file.
+
+When you have filled .env.docker file, please run the following command in order to have required images for deployment.
+
+Terminal 1:
+
+```bash
+docker compose --env-file .env.docker build
+```
+
+When you have the following images, you are ready to run the containers.
+
+* logsherlock-mock-llm
+* logsherlock-backend
+* logsherlock-frontend
+
+To run LogSherlock, please run the following command:
+
+```bash
+docker compose --env-file .env.docker up -d  
+```
+
+When your containers are up, hit the given frontend url (described in .env.docker ex: API_CORS_ORIGINS=http://localhost:3000)
+
+Try to insert an investigation record to postgres via UI.
+
+Check the record on postgres container via clicking postgres container after that click exec to run the following commands:
+
+```bash
+psql -U postgres # first command that enables running sql commands on postgres container
+
+select investigation_id, application_name, analysis_mode, llm_provider from investigations; # second command to see the records
+
+Type \q and press Enter # This is the standard PostgreSQL quit command
+```
+
+Run the following commands to stop containers and delete everything:
+
+```bash
+docker system prune -a -f # It deletes almost everything cached by Docker across your entire system to free up disk space.
+
+docker compose down -v --rmi all # It tears down the containers defined in your current docker-compose.yml file and wipes their associated data.
+```
