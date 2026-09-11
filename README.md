@@ -1,10 +1,27 @@
-# LogSherlock
+# 🔍 LogSherlock
 
-LogSherlock is a log analysis platform built as a LangGraph workflow. It ingests
-raw log output from a variety of production systems, turns it into a clean,
-normalized, machine-readable form, and then reasons about it: what the dataset
-contains, how the incident unfolded over time, which errors occurred, and which
-of them actually started it.
+**LogSherlock** is an enterprise-grade, multi-agent log investigation platform built on stateful **LangGraph** workflows. Designed to eliminate manual incident triage, LogSherlock ingests raw logs from complex multi-ecosystem environments, normalizes non-uniform data with zero hallucination risk, and orchestrates specialized AI agents to perform temporal pattern analysis, error signature extraction, automated web-based documentation lookup, and root-cause synthesis.
+
+---
+
+### ✨ Key Architecture & Engineering Highlights
+
+* **Hybrid Execution Engine**: Combines deterministic Python parsing and arithmetic time-series aggregation (zero-hallucination baseline) with scoped multi-agent LLM reasoning for deep root-cause synthesis.
+* **Autonomous LangGraph Orchestration**: Uses a directed acyclic state graph (DAG) featuring dedicated agents for log parsing, statistical anomaly detection, timeline bucketization, error signature clustering, web search verification, and executive report drafting.
+* **Universal Multi-Ecosystem Parser**: Native pattern-matching registry supporting **Spring Boot, PostgreSQL, Python logging, FastAPI/Uvicorn, NestJS, Pino JSON, MS SQL Server**, and generic/JSON line formats.
+* **Resilient & Offline-First Design**: Graceful degradation guarantees deterministic findings are never lost if external LLM providers or web search tools fail. Includes a built-in mock LLM provider for completely offline end-to-end testing.
+* **Production-Grade Microservices**: Multi-tier architecture featuring a **FastAPI** backend, **React/Tailwind** SPA frontend, **PostgreSQL** persistence layer, and **Nginx** reverse proxy—fully containerized via multi-stage **Docker Compose**.
+* **Flexible Provider Support**: Pluggable integration supporting OpenAI, Anthropic, Google Gemini, Deepseek and OpenAI compatible local/mock LLM endpoints.
+
+---
+
+### 🛠️ Tech Stack
+
+* **AI & Graph Orchestration**: LangGraph, LangChain, OpenAI API, Google Gemini API
+* **Backend**: Python 3.12, FastAPI, Pydantic v2, `uv` Package Manager
+* **Frontend**: React 18, TypeScript, TailwindCSS, Vite, Nginx
+* **Database & Persistence**: PostgreSQL, SQLAlchemy, `psycopg2`
+* **DevOps & Testing**: Docker, Docker Compose, `pytest` (950+ unit/topology/architecture tests)
 
 ---
 
