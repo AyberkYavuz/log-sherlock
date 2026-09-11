@@ -37,33 +37,16 @@ dependencies = [
     # provider is exercised from LangGraph Studio, not only from pytest.
     "fastapi>=0.116",
     "uvicorn>=0.35",
-]
-
-[project.optional-dependencies]
-# LLM providers. Each is imported lazily by
-# graph_library/error_analysis/llm_factory.py, so a deployment installs only
-# the vendors it actually calls — that laziness is the whole reason these are
-# not in the core list.
-openai = ["langchain-openai>=1.3"]
-anthropic = ["langchain-anthropic>=1.5"]
-# Two packages, because the Gemini path uses two SDKs for two jobs:
-# ``google-genai`` for ``discover_models()``'s ``models.list()`` call, and
-# ``langchain-google-genai`` for ``ChatGoogleGenerativeAI`` — the client every
-# LLM node actually invokes. Only the first was declared here, so
-# ``pip install -e ".[gemini]"`` produced an environment that could enumerate
-# Gemini models and not call one: every Gemini run degraded with "The 'gemini'
-# provider requires the langchain-google-genai package". It went unnoticed
-# locally because the package was installed by hand; a container built from
-# this manifest alone is what surfaced it.
-gemini = ["google-genai>=2.18", "langchain-google-genai>=4.3"]
-# Optional web-search detour for the error-analysis node, off by default.
-search = ["tavily-python>=0.5"]
-# Everything needed to run the suite and the deterministic aggregations.
-dev = [
-    "pytest>=9.1",
     "pandas>=3.0",
     "httpx>=0.28",
+    "pytest>=9.1",
+    "langchain-openai>=1.3",
+    "langchain-anthropic>=1.5",
+    "google-genai>=2.18",
+    "langchain-google-genai>=4.3",
+    "tavily-python>=0.5"
 ]
+
 
 [tool.setuptools]
 # The graph is a top-level module, not a package, because langgraph.json points
